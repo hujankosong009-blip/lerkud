@@ -1,0 +1,4 @@
+-r requirements.txt
+# Optional local PostgreSQL integration and Chromium UI smoke tests.
+pgserver==0.1.4
+playwright==1.64.0
