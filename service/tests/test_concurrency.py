@@ -35,6 +35,7 @@ class PostgreSQLConcurrencyTests(TransactionTestCase):
         from django.core.exceptions import ValidationError
         from service.models import Officer
         from service.services import save_account
+        point=Location.objects.create(name='Concurrent Test Point',category='IPWL',active=True)
         actors=[]
         for name in ['parallel-manager-a','parallel-manager-b']:
             web=get_user_model().objects.create_user(username=name,is_staff=True)
@@ -43,7 +44,7 @@ class PostgreSQLConcurrencyTests(TransactionTestCase):
             close_old_connections()
             try:
                 officer=Officer.objects.select_related('web_user').get(pk=pk)
-                data={'username':officer.web_user.username,'first_name':'','last_name':'','email':'','role':Role.PELAKSANA,'all_locations':True,'active':True,'locations':[]}
+                data={'username':officer.web_user.username,'first_name':'','last_name':'','email':'','role':Role.PELAKSANA,'active':True,'location':point}
                 try:
                     save_account(officer,data,officer=officer)
                     return True
@@ -55,3 +56,29 @@ class PostgreSQLConcurrencyTests(TransactionTestCase):
             results=list(pool.map(demote,[o.pk for o in actors]))
         self.assertEqual(sum(results),1)
         self.assertEqual(Officer.objects.filter(role=Role.SUPERADMIN,verified=True).count(),1)
+    def test_concurrent_location_confirmation_has_one_destination(self):
+        from service.models import Application, Status
+        from service.services import submit_screening, begin_assessment, submit_evidence, send_to_location, site_config
+        from .test_workflows import picture
+        from django.core.exceptions import ValidationError
+        app,_=submit_registration(self.user)
+        submit_screening(self.user,app,'Kendala uji konkurensi')
+        config=site_config(); config.self_assessment_url='https://example.org/test'; config.save()
+        begin_assessment(self.user,app); submit_evidence(self.user,app,picture())
+        points=[Location.objects.create(name=f'Concurrent Point {n}',category='IPWL',active=True) for n in range(2)]
+        def send(pk):
+            close_old_connections()
+            try:
+                try:
+                    _,created=send_to_location(TelegramUser.objects.get(pk=self.user.pk),Application.objects.get(pk=app.pk),Location.objects.get(pk=pk))
+                    return created
+                except ValidationError:
+                    return False
+            finally:
+                connections.close_all()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(send,[point.pk for point in points]))
+        self.assertEqual(sum(results),1)
+        app.refresh_from_db(); self.assertEqual(app.status,Status.WAIT_VERIFY)
+        self.assertEqual(app.assignment_history.count(),1)
+        self.assertEqual(app.notifications.filter(event='dossier_ready').count(),1)

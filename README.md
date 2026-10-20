@@ -8,13 +8,13 @@ Aplikasi Django/Python untuk pelayanan melalui bot Telegram dan dashboard. Postg
 
 ## Perubahan alur versi ini
 
-**Data diri → Skrining/kendala → Self Asesmen pada website resmi → konfirmasi dan unggah screenshot → antrean verifikasi Pelaksana → tindak lanjut.**
+**Data diri → Skrining/kendala → Self Asesmen pada website resmi → konfirmasi dan unggah screenshot → pilih dan konfirmasi titik akses → berkas dikirim ke Pelaksana lokasi tersebut → tindak lanjut.**
 
 - Setelah kirim registrasi, bot langsung meminta kendala. Setelah kendala dikirim, bot langsung menawarkan langkah Self Asesmen.
-- Tautan BOSS BNN / Self Asesmen diisi **Superadmin → Tampilan dashboard & Self Asesmen**. Belum ada tautan bawaan. Tanpa tautan, proses berhenti secara jelas pada tahap menunggu Self Asesmen; data sebelumnya tetap tersimpan.
+- Tautan resmi yang diberikan pengelola, `https://selfassessment.bnn.go.id/Transactions/Assist`, diisi otomatis oleh migrasi 0005 hanya jika pengaturan tautan masih kosong. Tautan dapat diubah melalui **Superadmin → Tampilan dashboard & Self Asesmen**; pengaturan lama yang sudah terisi tidak ditimpa. Tanpa tautan, proses berhenti secara jelas pada tahap menunggu Self Asesmen; data sebelumnya tetap tersimpan.
 - Website penyedia menampilkan hasilnya sendiri. SALAM MANIS menyimpan **screenshot bukti yang dikirim pemohon**, bukan menarik skor/hasil terverifikasi dari penyedia. Tidak ada integrasi API, instrumen, skor, diagnosis, atau keputusan klinis yang dibuat sendiri.
 - Pemohon menyetujui penyimpanan bukti sebelum mengunggah Foto melalui chat pribadi bot. Gambar JPEG/PNG/WebP maksimal 5 MB diperiksa dan dienkode ulang untuk menghapus metadata. File palsu/SVG/resolusi berlebihan ditolak.
-- Setelah seluruh berkas lengkap, Pelaksana sesuai cakupan akses memperoleh notifikasi dengan tombol membuka berkas. Notifikasi tidak memuat NIK, nama, isi kendala, screenshot, atau catatan sensitif pada layar kunci. Berkas lengkap tersedia melalui bot terautorisasi dan dashboard. Pelaksana dapat menekan **Lihat bukti screenshot** di bot; gambar dikirim hanya ke chat pribadi yang masih berwenang, bukan sebagai lampiran notifikasi otomatis.
+- Setelah bukti tersimpan, status menjadi **Menunggu Pilihan Titik Akses**. Berkas belum terlihat oleh Pelaksana dan belum ada notifikasi Pelaksana. Pemohon memilih kategori, lokasi aktif, lalu menekan **Kirim ke lokasi ini**. Setelah konfirmasi, hanya Pelaksana yang terikat ke lokasi itu menerima berkas dan notifikasi dengan tombol membuka berkas. Notifikasi tidak memuat NIK, nama, isi kendala, screenshot, atau catatan sensitif pada layar kunci. Berkas lengkap tersedia melalui bot terautorisasi dan dashboard. Pelaksana dapat menekan **Lihat bukti screenshot** di bot; gambar dikirim hanya ke chat pribadi yang masih berwenang, bukan sebagai lampiran notifikasi otomatis.
 - Pelaksana memverifikasi bukti secara eksplisit. Bukti sesuai → Sedang Ditinjau; perlu perbaikan → Perlu Kelengkapan. Verifikasi berkas bukan diagnosis atau verifikasi langsung oleh penyedia asesmen.
 
 ## Dua jenis akun
@@ -26,21 +26,19 @@ Aplikasi Django/Python untuk pelayanan melalui bot Telegram dan dashboard. Postg
 | Superadmin | Kelola akun, cakupan lokasi, undangan Telegram, direktori, ketentuan, tautan Self Asesmen, logo/keterangan dashboard, data dan arsip |
 | Pelaksana | Membaca berkas dalam cakupannya, membantu pencatatan/koreksi, melihat bukti privat, memverifikasi dan memperbarui perjalanan permohonan |
 
-Pelaksana dapat dibatasi lokasi atau diberi cakupan semua lokasi oleh Superadmin. Antrean yang belum ditetapkan lokasi tersedia bagi Pelaksana aktif untuk tindak lanjut. Permohonan yang telah ditugaskan ke lokasi lain tidak dapat dibaca petugas di luar cakupannya. Superadmin memiliki akses pengelolaan lintas lokasi. Jenis akun tidak memberi kewenangan klinis otomatis.
+Setiap akun **Pelaksana wajib terikat ke tepat satu titik akses aktif**. Tidak ada cakupan semua lokasi atau akses antrean bersama untuk Pelaksana. Hanya permohonan yang sudah dikirim dan ditujukan ke titik aksesnya yang dapat dibaca, diperbarui, atau diterima melalui notifikasi. Penugasan ganda perlu diperbaiki oleh Superadmin; akses Pelaksana diblokir sampai penugasannya menjadi satu lokasi yang valid. Flag cakupan luas dari versi lama tidak memberikan akses lintas lokasi. Superadmin memiliki akses pengelolaan lintas lokasi. Jenis akun tidak memberi kewenangan klinis otomatis.
 
 Penghapusan permohonan **hanya oleh Superadmin**, memerlukan alasan, dan dilakukan sebagai **arsip**, bukan penghapusan permanen. Riwayat dan bukti dipertahankan; pemulihan tersedia melalui daftar Arsip. Akun dinonaktifkan melalui edit akun. Akun sendiri dan Superadmin aktif terakhir dilindungi.
 
 ## Dashboard
 
-Halaman utama langsung menuju Data Pemohon dengan tiga tabel:
+Halaman utama berisi **satu tabel Data Pemohon**: nama/nomor, data diri dan domisili, teks permasalahan terbaru, titik akses pilihan, status perjalanan, serta aksi ikon. Pencarian tunggal mencakup identitas, kontak, nomor, lokasi dan teks permasalahan. Tidak ada tab/tabel Skrining atau Bukti terpisah. Bukti privat, identitas lengkap, riwayat dan verifikasi dibuka melalui rincian berkas.
 
-1. **Data pribadi:** pencarian nomor, nama, NIK, telepon, atau kota.
-2. **Skrining/kendala:** pencarian nomor, nama, atau isi kendala.
-3. **Bukti Self Asesmen:** pencarian nomor, nama, atau catatan verifikasi.
+Tersedia ringkasan total/menunggu verifikasi/dalam penanganan/selesai tanpa menambah tabel. Aksi tambah dan arsip hanya Superadmin; lihat/edit mengikuti akses lokasi. Pencarian dilakukan setelah pemeriksaan akses. Riwayat versi kendala tetap disimpan. Pencatatan manual oleh Superadmin memerlukan akun Telegram pemohon dengan persetujuan ketentuan yang sudah ada.
 
-Setiap tabel menampilkan status perjalanan dan aksi ikon dengan label aksesibilitas: tambah, lihat, edit, unggah, dan hapus ke arsip sesuai kewenangan. Pencarian selalu dilakukan setelah pembatasan akses. Riwayat versi kendala disimpan saat dikoreksi. Pencatatan manual memerlukan pengguna Telegram yang telah menyetujui ketentuan; petugas tidak boleh mengarang persetujuan pemohon.
+**Tampilan dashboard** menyediakan logo, nama, keterangan, deskripsi, dan tautan HTTPS Self Asesmen. Unggah file logo PNG/JPG/WebP institusi pada **Tampilan dashboard → Logo baru → Simpan**. Logo yang sama tampil pada sidebar, **beranda**, dan **halaman login**. Pengaturan logo lama tetap dipakai setelah upgrade. Jika belum ada berkas logo, tampilan memakai identitas teks sementara; logo tidak direkonstruksi atau diganti dengan gambar rekaan.
 
-**Tampilan dashboard** menyediakan penggantian logo gambar, nama, keterangan singkat, deskripsi, dan tautan resmi HTTPS Self Asesmen. **Kelola akun** menyediakan pembuatan akun, perubahan password/peran/cakupan, dan penonaktifan. Login web dan aktivasi Telegram tetap terpisah.
+**Kelola akun** menyediakan pembuatan akun, perubahan password/peran/titik akses, dan penonaktifan. Login web dan aktivasi Telegram tetap terpisah. Buat akun Pelaksana untuk setiap lokasi nyata, lalu pilih akun dan lokasi yang sama pada undangan Telegram.
 
 ## Notifikasi gratis dan cepat
 
@@ -58,7 +56,7 @@ NOTIFICATION_CHANNEL=bot
 
 - Pemohon ditawari persetujuan notifikasi sebelum registrasi. Pilihan menolak dan menonaktifkan tetap tersedia.
 - Pelaksana menekan **Setuju notifikasi & buka menu** setelah aktivasi, atau mengaktifkannya melalui **Pengaturan Notifikasi**. Tanpa persetujuan, pengiriman dicatat gagal secara jelas.
-- Untuk menguji, buat pembaruan baru setelah mengaktifkan mode live dan persetujuan. Pesan lama yang telah ditandai **Simulasi tidak dikirim ulang**.
+- Untuk memeriksa admin, Superadmin membuka **Kelola akun** lalu menekan ikon **Uji notifikasi Telegram** pada akun Pelaksana yang telah tertaut, atau Pelaksana membuka **Pusat notifikasi → Kirim pesan uji ke akun saya**. Uji dibatasi satu kali per menit dan dicatat di log; belum tertaut/belum menyetujui akan dijelaskan. Untuk uji end-to-end, pemohon melengkapi bukti lalu mengonfirmasi lokasi; periksa chat hanya Pelaksana lokasi itu. Pengiriman uji nyata memerlukan mode live, token valid, dan `run_bot` tetap berjalan. Buat pembaruan baru setelah mengaktifkan mode live dan persetujuan. Pesan lama yang telah ditandai **Simulasi tidak dikirim ulang**.
 - Dashboard menampilkan penanda jumlah berkas menunggu verifikasi dan pemberitahuan otomatis setiap 5 detik selama halaman terbuka. Tabel aktif diperbarui tanpa mengganggu form POST yang sedang diedit. Notifikasi browser dapat diaktifkan dengan tombol izin; beberapa browser ponsel tidak mendukung notifikasi sistem tanpa service worker, tetapi penanda halaman tetap bekerja. Ini **bukan push browser ketika tab ditutup**.
 - Dashboard menampilkan log antre/simulasi/gagal/terkirim, percobaan, message ID dan waktu. Status terkirim hanya dicatat setelah Telegram berhasil menerima pengiriman.
 
@@ -125,7 +123,7 @@ Skrip membuat backup SQLite yang konsisten di `backups/` sebelum memasang depend
 
 Migrasi 0004 mempertahankan permohonan/profil/riwayat lama:
 
-- SYSTEM aktif → Superadmin; COORD/LOCAL → Pelaksana. Cakupan lintas lokasi COORD lama dipertahankan. Penugasan lokasi ganda digabungkan.
+- SYSTEM aktif → Superadmin; COORD/LOCAL → Pelaksana. Pada pembaruan terakhir, Pelaksana hanya memakai penugasan lokasi eksplisit; flag cakupan lintas lokasi lama dinonaktifkan. Penugasan lokasi ganda digabungkan.
 - Hak staff/superuser lama pada akun yang menjadi Pelaksana dicabut. Penugasan yang telah dicabut tidak dihidupkan kembali.
 - Permohonan lama ditandai **versi sebelumnya**, bukan diberi screenshot atau hasil asesmen rekaan. Permohonan baru mengikuti alur tiga langkah. Kasus lama tetap dapat ditangani sesuai status lamanya.
 - Kode undangan lama yang belum digunakan dicabut agar undangan baru memakai dua peran secara eksplisit. Buat ulang kode jika diperlukan.
@@ -133,11 +131,11 @@ Migrasi 0004 mempertahankan permohonan/profil/riwayat lama:
 
 ## Menambah akun dan menghubungkan Telegram
 
-1. Superadmin membuka **Kelola akun**, membuat username/password, memilih Superadmin/Pelaksana, serta cakupan/lokasi. Gunakan akun aktif yang telah diverifikasi institusi.
+1. Superadmin membuka **Kelola akun**, membuat username/password, memilih Superadmin/Pelaksana, serta satu titik akses untuk Pelaksana. Gunakan akun aktif yang telah diverifikasi institusi.
 2. Di **Pengelolaan → Tautkan petugas ke Telegram**, pilih **akun yang sama**, lokasi, peran yang sesuai dan masa berlaku. Kode acak tampil satu kali, hanya hash disimpan, dan berlaku sekali pakai.
 3. Petugas memilih Admin di bot, memasukkan kode, lalu menyetujui notifikasi. Akun web dan Telegram akan berada pada satu profil petugas. Tidak perlu memasukkan kode setiap saat.
-4. Akun Telegram yang sudah terkait petugas lain tidak dipindahkan secara diam-diam melalui kode. Jika instalasi lama memiliki dua profil untuk orang yang sama, pengelola harus memverifikasi dan menata penautan melalui administrasi petugas; jangan menautkan akun tanpa pemeriksaan identitas.
-5. Perubahan akun/peran mencabut undangan belum terpakai untuk akun tersebut. Pencabutan akun atau penugasan diperiksa ulang pada setiap tindakan dan saat pengiriman notifikasi.
+4. Jika Telegram masih berada pada profil lama yang **belum punya login web**, undangan baru yang terikat akun/lokasi dapat menautkannya ke akun Pelaksana baru: profil lama dinonaktifkan dan pemindahan diaudit, sementara riwayatnya tetap ada. Profil yang sudah memiliki login web tidak dipindahkan otomatis; Superadmin perlu memverifikasi identitas dan menata penautannya. Jangan membagikan undangan ke orang yang tidak berwenang.
+5. Perubahan akun/peran/titik akses mencabut undangan belum terpakai untuk akun tersebut. Pencabutan akun atau penugasan diperiksa ulang pada setiap tindakan dan saat pengiriman notifikasi.
 
 ## Linux/macOS dan cloud
 
@@ -179,10 +177,13 @@ Bot API membutuhkan HTTPS ke `api.telegram.org`. Dashboard URL resmi opsional di
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python scripts/test_postgres.py
 .venv/bin/python scripts/test_upgrade.py
+.venv/bin/python scripts/test_route_upgrade.py
 CHROMIUM_PATH=/usr/bin/chromium .venv/bin/python scripts/test_browser.py
 ```
 
-SQLite melewati dua tes row-lock khusus PostgreSQL. Semua data tes/screenshot sintetis; koneksi Telegram nyata ditiru. Pengujian browser mencakup pemberitahuan tanpa klik, tiga tabel/search, verifikasi, upload bukti privat, edit data, logo/keterangan, akun baru, dan tampilan ponsel. Lihat [laporan pengujian](docs/TEST_REPORT.md).
+SQLite melewati empat tes row-lock khusus PostgreSQL. Semua data tes/screenshot sintetis; koneksi Telegram nyata ditiru. Pengujian browser mencakup pemberitahuan tanpa klik, satu tabel/search, verifikasi, upload bukti privat, edit data, logo/keterangan, akun baru, dan tampilan ponsel. Migrasi 0005 menambahkan pilihan lokasi dan menjaga berkas lama yang sudah ditugaskan. Berkas versi 0004 yang sudah memiliki bukti tetapi belum punya lokasi masuk Menunggu Pilihan Titik Akses; bukti tetap tersimpan. Migrasi tidak mengklaim lokasi lama dipilih pemohon. Lokasi direktori yang belum ada tidak diisi dengan fasilitas rekaan.
+
+Lihat [laporan pengujian](docs/TEST_REPORT.md).
 
 Modul utama: `models.py`/`migrations` untuk data; `services.py` untuk transaksi/alur; `access.py` untuk hak akses; `bot.py` untuk percakapan; `telegram_api.py` untuk transport; `notifications.py` untuk antrean; `uploads.py` untuk gambar; `views.py`/`forms.py`/`templates` untuk dashboard.
 

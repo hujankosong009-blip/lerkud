@@ -27,7 +27,7 @@ def masked(data):
 def draft_prompt(draft):
     key, label = FIELDS[draft.step]
     hint = {'nik':'16 digit; bukan verifikasi Dukcapil.','phone':'Nomor yang dapat dihubungi; gunakan 08… atau kode negara +….','city':'Input manual kota/kabupaten domisili; alamat belum terverifikasi.','district':'Input manual kecamatan domisili.','village':'Input manual kelurahan/desa domisili.','rt':'Angka; nol di depan akan disimpan.','rw':'Angka; nol di depan akan disimpan.'}.get(key,'Isi dengan benar dan lengkap.')
-    return reply(f'📝 LANGKAH 1/3 · DATA DIRI\n{"▰" * draft.step}{"▱" * (9-draft.step)}\n\nIsian {draft.step+1}/9 — {label}\n{hint}',DRAFT_NAV)
+    return reply(f'📝 LANGKAH 1/4 · DATA DIRI\n{"▰" * draft.step}{"▱" * (9-draft.step)}\n\nIsian {draft.step+1}/9 — {label}\n{hint}',DRAFT_NAV)
 
 def summary(draft):
     return reply('✨ Hampir selesai! Periksa data diri Anda.\n\n'+masked(draft.data), [('Ubah Data','edit'),('Kirim Registrasi','submit'),('Simpan Draft','save')])
@@ -67,7 +67,7 @@ def dispatch(user, text, action, photo=None):
     state = user.state
     if text == '/start' or action=='home':
         # Leave persistent draft and conversation state intact.
-        return [reply('🌿 '+WELCOME+'\n\nKami mendampingi Anda melalui 3 langkah: data diri → kendala → Self Asesmen & bukti.',[('Masyarakat','public'),('Admin','admin')])]
+        return [reply('🌿 '+WELCOME+'\n\nKami mendampingi Anda melalui 4 langkah: data diri → kendala → Self Asesmen & bukti → pilih titik akses.',[('Masyarakat','public'),('Admin','admin')])]
     if action=='public':
         set_state(user,mode='menu')
         result = [reply(INTRO, PUBLIC)]
@@ -75,6 +75,9 @@ def dispatch(user, text, action, photo=None):
             result.append(reply('Ada formulir tersimpan. Lanjutkan pengisian?', [('Lanjutkan Draft','resume'),*BACK]))
         if ScreeningDraft.objects.filter(application__applicant__user=user,application__status__in=[Status.WAIT_SCREEN,Status.NEED_INFO]).exists():
             result.append(reply('Ada draft Skrining tersimpan.', [('Lanjutkan Skrining','screen'),*BACK]))
+        pending = active_application(user)
+        if pending and pending.status == Status.WAIT_LOCATION:
+            result.append(reply('Bukti sudah tersimpan. Pilih titik akses agar berkas dapat dikirim.', [('Lanjutkan pilihan lokasi','pick_location'),*BACK]))
         return result
     if action=='terms':
         terms = Terms.objects.filter(active=True).first()
@@ -90,6 +93,7 @@ def dispatch(user, text, action, photo=None):
             return [reply('🔔 Agar Anda langsung mengetahui pembaruan, izinkan bot mengirim pemberitahuan layanan. Pesan tidak memuat NIK atau isi kendala. Anda dapat menonaktifkannya kapan saja.', [('Setuju & lanjut registrasi','notify_register'),('Lanjut tanpa notifikasi','notify_skip')])]
         app = active_application(user)
         if app:
+            if app.status == Status.WAIT_LOCATION: return dispatch(user,'','pick_location')
             if app.status == Status.WAIT_SCREEN: return dispatch(user,'','screen')
             if app.status in (Status.WAIT_ASSESS,Status.WAIT_PROOF): return dispatch(user,'','self')
             return [reply('📂 Anda sudah memiliki permohonan aktif. Silakan lanjutkan dari tahap terakhir.',[('Progres Permohonan Saya','progress'),('Skrining','screen'),*BACK])]
@@ -139,13 +143,13 @@ def dispatch(user, text, action, photo=None):
             set_state(user,mode='screening_review',application=str(app.pk))
             return [reply('Ringkasan Skrining tersimpan\n'+saved.text,[('Ubah','screen_edit'),('Kirim Skrining','screen_send'),*BACK])]
         set_state(user,mode='screening',application=str(app.pk))
-        return [reply('💬 LANGKAH 2/3 · KENDALA\n\n'+SCREEN_PROMPT,[('Pengaturan Notifikasi','notify'),*BACK])]
+        return [reply('💬 LANGKAH 2/4 · KENDALA\n\n'+SCREEN_PROMPT,[('Pengaturan Notifikasi','notify'),*BACK])]
     if action in ('screen_edit','screen_send'):
         app=active_application(user)
         if not app: raise ValidationError('Permohonan aktif tidak tersedia.')
         if action=='screen_edit':
             set_state(user,mode='screening',application=str(app.pk))
-            return [reply('💬 LANGKAH 2/3 · KENDALA\n\n'+SCREEN_PROMPT,[('Pengaturan Notifikasi','notify'),*BACK])]
+            return [reply('💬 LANGKAH 2/4 · KENDALA\n\n'+SCREEN_PROMPT,[('Pengaturan Notifikasi','notify'),*BACK])]
         saved=ScreeningDraft.objects.filter(application=app).first()
         submit_screening(user,app,saved.text if saved else '')
         ScreeningDraft.objects.filter(application=app).delete()
@@ -162,9 +166,9 @@ def dispatch(user, text, action, photo=None):
         if app.status not in (Status.WAIT_ASSESS,Status.WAIT_PROOF,Status.NEED_INFO):
             return [reply('📬 Berkas Anda sudah dikirim. Pantau proses verifikasinya.', [('Progres Permohonan Saya','progress'),*BACK])]
         if not site_config().self_assessment_url:
-            return [reply('🌿 LANGKAH 3/3 · SELF ASESMEN\n\nData diri dan kendala tersimpan. Tautan BOSS BNN / Self Asesmen sedang disiapkan pengelola. Setelah tautan tersedia, kembali ke menu ini untuk mengisi dan mengirim bukti. Tidak ada skor atau hasil yang dibuat oleh bot.', [('Periksa tautan kembali','self'),*BACK])]
+            return [reply('🌿 LANGKAH 3/4 · SELF ASESMEN\n\nData diri dan kendala tersimpan. Tautan BOSS BNN / Self Asesmen sedang disiapkan pengelola. Setelah tautan tersedia, kembali ke menu ini untuk mengisi dan mengirim bukti. Tidak ada skor atau hasil yang dibuat oleh bot.', [('Periksa tautan kembali','self'),*BACK])]
         app = begin_assessment(user,app)
-        return [reply('🌿 LANGKAH 3/3 · SELF ASESMEN\n\n1. Buka tautan resmi di bawah.\n2. Isi Self Asesmen di website tersebut.\n3. Kembali ke bot dan kirim screenshot bukti pengisian.\n\nHasil ditampilkan oleh website penyedia. Screenshot adalah bukti kiriman Anda dan akan diverifikasi Pelaksana, bukan hasil terverifikasi otomatis.', [('Buka Self Asesmen / BOSS BNN','url:'+app.assessment_url),('Sudah mengisi · Kirim bukti','evidence_begin'),*BACK])]
+        return [reply('🌿 LANGKAH 3/4 · SELF ASESMEN\n\n1. Buka tautan resmi di bawah.\n2. Isi Self Asesmen di website tersebut.\n3. Kembali ke bot dan kirim screenshot bukti pengisian.\n\nHasil ditampilkan oleh website penyedia. Screenshot adalah bukti kiriman Anda dan akan diverifikasi Pelaksana, bukan hasil terverifikasi otomatis.', [('Buka Self Asesmen / BOSS BNN','url:'+app.assessment_url),('Sudah mengisi · Kirim bukti','evidence_begin'),*BACK])]
     if action in ('evidence_begin','evidence_consent'):
         app = active_application(user)
         if not app or app.status not in (Status.WAIT_PROOF,Status.NEED_INFO) or not app.assessment_url:
@@ -181,7 +185,43 @@ def dispatch(user, text, action, photo=None):
         app = Application.objects.get(pk=state['application'],applicant__user=user,deleted_at__isnull=True)
         submit_evidence(user,app,photo)
         set_state(user,mode='menu')
-        return [reply('🎉 BERKAS ANDA LENGKAP\n\n✅ Data diri\n✅ Skrining/kendala\n✅ Bukti pengisian Self Asesmen\n\nBerkas telah masuk ke antrean verifikasi Pelaksana. Notifikasi diantrekan; status pengirimannya tercatat di sistem.', [('Progres Permohonan Saya','progress'),('Pengaturan Notifikasi','notify'),*BACK])]
+        app.refresh_from_db()
+        if app.status == Status.WAIT_LOCATION:
+            return [reply('✅ Bukti pengisian sudah tersimpan. Berkas belum dikirim kepada Pelaksana. Selanjutnya, pilih lokasi titik akses yang Anda inginkan.')] + dispatch(user,'','pick_location')
+        return [reply('✅ Bukti perbaikan diterima. Pelaksana di titik akses Anda akan mendapat pemberitahuan.', [('Progres Permohonan Saya','progress'),*BACK])]
+
+    if action == 'pick_location' or action.startswith(('loc_category:','loc_page:','loc_pick:','loc_send:')):
+        app = active_application(user)
+        if not app:
+            raise ValidationError('Permohonan aktif tidak tersedia.')
+        if action.startswith('loc_send:'):
+            location = Location.objects.filter(pk=action.split(':')[1]).first()
+            if not location: raise ValidationError('Lokasi tidak tersedia.')
+            app,created = send_to_location(user,app,location)
+            set_state(user,mode='menu')
+            return [reply(f'🎉 PERMOHONAN TERKIRIM\n\nNomor: {app.number}\nTitik akses: {app.location.name}\n\nData diri, kendala, dan bukti telah masuk ke antrean verifikasi lokasi pilihan Anda. Notifikasi diantrekan hanya untuk Pelaksana lokasi tersebut yang terhubung dan menyetujui pemberitahuan.', [('Progres Permohonan Saya','progress'),('Pengaturan Notifikasi','notify'),*BACK])]
+        if app.status != Status.WAIT_LOCATION:
+            return [reply('Pilihan titik akses tersedia setelah bukti pengisian diterima. Jika permohonan sudah terkirim, perubahan lokasi dilakukan Superadmin.', [('Self Asesmen','self'),('Progres Permohonan Saya','progress'),*BACK])]
+        if action == 'pick_location':
+            return [reply('📍 LANGKAH 4/4 · PILIH TITIK AKSES\n\nPilih kategori lalu lokasi yang akan menerima berkas Anda. Hanya lokasi aktif yang ditampilkan. Berkas belum dikirim sebelum Anda mengonfirmasi lokasi.', [(label,f'loc_category:{i}') for i,(key,label) in enumerate(Category.choices) if key != Category.COORD]+BACK)]
+        if action.startswith('loc_pick:'):
+            location = Location.objects.filter(pk=action.split(':')[1],active=True).exclude(category=Category.COORD).first()
+            if not location: raise ValidationError('Titik akses tidak tersedia. Pilih kembali lokasi aktif.')
+            return [reply(f'📍 Konfirmasi titik akses\n\n{location.name}\n{location.address}\n{location.city} · {location.district} · {location.village}\n\nBerkas Anda akan dikirim kepada Pelaksana yang ditugaskan pada lokasi ini.', [('✅ Kirim ke lokasi ini',f'loc_send:{location.pk}'),('Pilih lokasi lain','pick_location'),*BACK])]
+        if action.startswith('loc_page:'):
+            _,index,page = action.split(':')
+            index,page = int(index),max(0,int(page))
+        else:
+            index,page = int(action.split(':')[1]),0
+        if index < 0 or index >= len(Category.choices): raise ValidationError('Kategori tidak tersedia.')
+        category,label = Category.choices[index]
+        if category == Category.COORD: raise ValidationError('Kategori tidak tersedia.')
+        locations = list(Location.objects.filter(active=True,category=category).order_by('name','pk')[page*8:page*8+9])
+        buttons = [(loc.name,f'loc_pick:{loc.pk}') for loc in locations[:8]]
+        if page: buttons.append(('← Sebelumnya',f'loc_page:{index}:{page-1}'))
+        if len(locations)>8: buttons.append(('Selanjutnya →',f'loc_page:{index}:{page+1}'))
+        buttons += [('Kategori lain','pick_location'),*BACK]
+        return [reply(f'📍 {label} — pilih titik akses:' if locations else f'Belum ada titik akses aktif untuk kategori {label}. Bukti Anda tetap tersimpan. Pilih kategori lain atau periksa kembali nanti.',buttons)]
 
     if action=='progress':
         apps = Application.objects.filter(applicant__user=user,deleted_at__isnull=True).select_related('location').order_by('-submitted_at')
@@ -191,7 +231,7 @@ def dispatch(user, text, action, photo=None):
     if action.startswith('my:'):
         app=Application.objects.filter(pk=action.split(':')[1],applicant__user=user,deleted_at__isnull=True).select_related('location').first()
         if not app: raise PermissionDenied()
-        return [reply(public_progress(user,app),[('Perbarui Progres',action),*BACK])]
+        return [reply(public_progress(user,app),([('📍 Pilih titik akses','pick_location')] if app.status == Status.WAIT_LOCATION else [])+[('Perbarui Progres',action),*BACK])]
     if action=='notify': return [reply('Notifikasi hanya berisi pemberitahuan umum tanpa NIK, uraian Skrining, atau catatan internal. Pilih persetujuan kanal.',[('Setuju Notifikasi Bot','notify_bot'),('Setuju & Kaitkan Akun Institusi','notify_link'),('Nonaktifkan Notifikasi','notify_off'),*BACK])]
     if action in ('notify_bot','notify_register','notify_skip','notify_admin'):
         user.bot_notifications = action != 'notify_skip'

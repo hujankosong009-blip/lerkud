@@ -52,8 +52,9 @@ class AssignmentAdmin(SystemAdmin):
 
 @admin.register(Officer)
 class OfficerAdmin(SystemAdmin):
-    readonly_fields=['role','all_locations','verified']
-    list_display=['id','web_user','telegram','role','all_locations','verified']
+    readonly_fields=['role','verified']
+    exclude=['all_locations']
+    list_display=['id','web_user','telegram','role','verified']
 
 @admin.register(ActivationCode)
 class CodeAdmin(SystemAdmin):

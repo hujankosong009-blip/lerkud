@@ -20,6 +20,7 @@ TRANSITIONS = {
     Status.WAIT_SCREEN: {Status.CANCELLED},
     Status.WAIT_ASSESS: {Status.CANCELLED},
     Status.WAIT_PROOF: {Status.CANCELLED},
+    Status.WAIT_LOCATION: {Status.CANCELLED},
     Status.WAIT_VERIFY: {Status.REVIEW, Status.NEED_INFO, Status.CANCELLED},
     Status.REVIEW: {Status.NEED_INFO, Status.FOLLOWUP, Status.CANCELLED},
     Status.NEED_INFO: {Status.CANCELLED},
@@ -57,7 +58,7 @@ def active_application(user):
 def queue_event(application, event, marker):
     recipients = {application.applicant.user_id}
     # Staff receive a complete dossier, not incomplete registration/screening drafts.
-    if event not in ('registration', 'screening', 'assessment_started') and (application.legacy_submission or application.evidence.exists()):
+    if event not in ('registration', 'screening', 'assessment_started') and application.routed_at and application.location_id:
         for officer in Officer.objects.filter(verified=True, role=Role.PELAKSANA, telegram__isnull=False).select_related('web_user'):
             if cases_for_notification(officer, application):
                 recipients.add(officer.telegram_id)
@@ -108,7 +109,7 @@ def submit_screening(user, application, text):
     old = app.status
     app.status = Status.WAIT_VERIFY if app.legacy_submission else Status.WAIT_ASSESS
     app.updated_at = timezone.now()
-    if not app.location_id:
+    if app.routed_at and not app.location_id:
         rule = RoutingRule.objects.filter(active=True,location__active=True,city__iexact=app.identity['city'],district__iexact=app.identity['district'],village__iexact=app.identity['village']).first()
         if rule:
             app.location = rule.location
@@ -153,29 +154,35 @@ def update_progress(officer, application, new_status, reason, public_text='', in
 def assign_application(officer, application, location, reason, responsible=None):
     app = Application.objects.select_for_update().get(pk=application.pk)
     require_coordinator(officer)
+    if not app.routed_at and not app.legacy_submission:
+        raise ValidationError('Pemohon perlu memilih dan mengirim ke titik akses melalui bot terlebih dahulu.')
     if not reason.strip() or not location.active: raise ValidationError('Lokasi aktif dan alasan wajib diisi.')
-    if responsible and (not officer_active(responsible) or responsible.role != Role.PELAKSANA or not (responsible.all_locations or assignments(responsible).filter(location=location).exists())):
+    if responsible and (not officer_active(responsible) or responsible.role != Role.PELAKSANA or not assignments(responsible).filter(location=location).exists()):
         raise ValidationError('Petugas tidak memiliki penugasan aktif pada lokasi ini.')
     old = app.location
+    if not old or old.pk != location.pk:
+        app.location_selected_at = None
     app.location = location
+    if not app.routed_at and app.legacy_submission:
+        app.routed_at = timezone.now()
     app.responsible = responsible
     app.updated_at = timezone.now()
     app.save()
     h = AssignmentHistory.objects.create(application=app,old_location=old,new_location=location,officer=officer,reason=reason.strip())
+    if not old or old.pk != location.pk:
+        Progress.objects.create(application=app,old_status=app.status,new_status=app.status,actor=officer,reason=reason.strip(),public_text=f'Penanganan permohonan ditetapkan ke {location.name}.')
     audit(f'officer:{officer.pk}', 'assignment.changed', app.pk)
     queue_event(app,'assignment',f'assignment:{h.pk}')
-    # Notify previous location as well; message contains no applicant details.
-    if old and old.pk != location.pk:
-        for member in OfficerAssignment.objects.filter(location=old,active=True,officer__verified=True,officer__telegram__isnull=False,officer__role=Role.PELAKSANA):
-            Notification.objects.get_or_create(dedupe_key=f'assignment-old:{h.pk}:{member.officer.telegram_id}',defaults={'application':app,'recipient':member.officer.telegram,'event':'assignment','channel':settings.NOTIFICATION_CHANNEL})
     return app
 
 @transaction.atomic
 def create_activation(location, role, hours=24, officer=None):
-    if role not in Role.values or not location.active or not 1 <= hours <= 168:
+    if role not in Role.values or not location.active or not 1 <= hours <= 168 or (role == Role.PELAKSANA and location.category == Category.COORD):
         raise ValidationError('Peran, lokasi aktif, dan masa berlaku 1–168 jam diperlukan.')
     if officer and (officer.role != role or not officer.verified):
         raise ValidationError('Peran undangan harus sesuai akun petugas terverifikasi.')
+    if officer and role == Role.PELAKSANA and list(assignments(officer).values_list('location_id',flat=True)) != [location.pk]:
+        raise ValidationError('Lokasi undangan harus sama dengan titik akses akun Pelaksana.')
     raw = secrets.token_urlsafe(32)
     code = ActivationCode.objects.create(digest=digest(raw),location=location,role=role,officer=officer,expires_at=timezone.now()+timedelta(hours=hours))
     return raw, code
@@ -184,32 +191,49 @@ def create_activation(location, role, hours=24, officer=None):
 def activate(user, raw):
     TelegramUser.objects.select_for_update().get(pk=user.pk)
     cutoff = timezone.now()-timedelta(minutes=15)
-    if ActivationAttempt.objects.filter(user=user,at__gte=cutoff,success=False).count()>=5:
+    if ActivationAttempt.objects.filter(user=user,at__gte=cutoff,success=False).count() >= 5:
+        audit(f'telegram:{user.pk}','activation.throttled')
+        return False
+    attempt = ActivationAttempt.objects.create(user=user,success=False)
+    def failed():
+        audit(f'telegram:{user.pk}','activation.failed')
         return False
     code = ActivationCode.objects.select_for_update().filter(digest=digest(raw.strip()),used_at__isnull=True,revoked=False,expires_at__gt=timezone.now(),location__active=True).first()
-    ActivationAttempt.objects.create(user=user,success=bool(code))
-    audit(f'telegram:{user.pk}', 'activation.success' if code else 'activation.failed')
-    if not code: return False
+    if not code:
+        return failed()
     existing = Officer.objects.filter(telegram=user).first()
     if code.officer_id:
         officer = Officer.objects.select_for_update().get(pk=code.officer_id)
-        if (officer.telegram_id and officer.telegram_id != user.pk) or (existing and existing.pk != officer.pk):
-            return False
-        if officer.role != code.role or not officer.verified:
-            return False
+        if officer.role != code.role or not officer.verified or (officer.telegram_id and officer.telegram_id != user.pk):
+            return failed()
+        if officer.role == Role.PELAKSANA and list(assignments(officer).values_list('location_id',flat=True)) != [code.location_id]:
+            return failed()
+        if existing and existing.pk != officer.pk and existing.web_user_id:
+            return failed()
     else:
         officer = existing or Officer(telegram=user)
-        # Only a role-bound invitation can change a Telegram-only officer role.
         if existing and existing.web_user_id and existing.role != code.role:
-            return False
+            return failed()
         officer.role = code.role
+    # No access changes occur until the invitation and its target have both been validated.
+    if existing and existing.pk != officer.pk:
+        existing.telegram = None
+        existing.verified = False
+        existing.save(update_fields=['telegram','verified'])
+        existing.assignments.update(active=False)
+        audit(f'telegram:{user.pk}','legacy_telegram.relinked',existing.pk)
     officer.telegram = user
     officer.verified = True
     officer.save()
+    if officer.role == Role.PELAKSANA:
+        officer.assignments.update(active=False)
     OfficerAssignment.objects.update_or_create(officer=officer,location=code.location,defaults={'active':True})
     code.used_at = timezone.now()
     code.used_by = user
     code.save()
+    attempt.success = True
+    attempt.save(update_fields=['success'])
+    audit(f'telegram:{user.pk}','activation.success')
     return True
 
 @transaction.atomic
@@ -290,12 +314,12 @@ def submit_evidence(user, application, image_data, submitted_by=None):
         raise ValidationError('Bukti sudah dikirim atau tahap unggah belum tersedia.')
     item = AssessmentEvidence.objects.create(application=app,image=image,mime=mime,checksum=checksum,source_url=app.assessment_url,submitted_by=submitted_by)
     old = app.status
-    app.status = Status.WAIT_VERIFY
+    app.status = Status.WAIT_VERIFY if app.routed_at and app.location_id else Status.WAIT_LOCATION
     app.updated_at = timezone.now()
     app.save()
-    p = Progress.objects.create(application=app,old_status=old,new_status=app.status,reason='Bukti pengisian dikirim',public_text='Data diri, kendala, dan bukti pengisian diterima. Menunggu verifikasi Pelaksana.')
+    p = Progress.objects.create(application=app,old_status=old,new_status=app.status,reason='Bukti pengisian dikirim',public_text='Bukti tersimpan. Pilih titik akses untuk mengirim permohonan.' if app.status == Status.WAIT_LOCATION else 'Bukti perbaikan diterima. Menunggu verifikasi Pelaksana di titik akses Anda.')
     audit(f'officer:{submitted_by.pk}' if submitted_by else f'telegram:{user.pk}', 'evidence.submitted', item.pk)
-    queue_event(app,'dossier_ready',f'progress:{p.pk}')
+    queue_event(app,'dossier_ready' if app.status == Status.WAIT_VERIFY else 'evidence_received',f'progress:{p.pk}')
     return item
 
 
@@ -373,6 +397,8 @@ def restore_application(officer, application):
 @transaction.atomic
 def save_account(actor, data, officer=None, new_user=None):
     require_coordinator(actor)
+    if data.get('role') == Role.PELAKSANA and data.get('active', True) and (not data.get('location') or not data['location'].active or data['location'].category == Category.COORD):
+        raise ValidationError('Akun Pelaksana wajib terikat ke satu titik akses aktif.')
     # Lock the complete active manager set to prevent concurrent last-manager removal.
     managers = list(Officer.objects.select_for_update().filter(role=Role.SUPERADMIN,verified=True,web_user__is_active=True).order_by('pk'))
     if officer:
@@ -402,11 +428,40 @@ def save_account(actor, data, officer=None, new_user=None):
     web.save()
     officer.role = data['role']
     officer.verified = active
-    officer.all_locations = data.get('all_locations',False)
+    officer.all_locations = False
     officer.save()
     officer.assignments.update(active=False)
-    for location in data.get('locations',[]):
+    for location in ([data['location']] if data.get('location') else []):
         OfficerAssignment.objects.update_or_create(officer=officer,location=location,defaults={'active':True})
     ActivationCode.objects.filter(officer=officer,used_at__isnull=True).update(revoked=True)
     audit(f'officer:{actor.pk}','account.saved',officer.pk)
     return officer
+
+
+@transaction.atomic
+def send_to_location(user, application, location):
+    """Only this final owner-confirmed action dispatches a new dossier to staff."""
+    app = Application.objects.select_for_update().get(pk=application.pk)
+    require_owner(user, app)
+    if app.routed_at:
+        if app.location_id == location.pk and app.status == Status.WAIT_VERIFY:
+            return app, False
+        raise ValidationError('Permohonan sudah dikirim. Perubahan titik akses selanjutnya melalui Superadmin.')
+    if app.status != Status.WAIT_LOCATION or not app.screenings.exists() or not app.evidence.exists():
+        raise ValidationError('Lengkapi data diri, kendala, dan bukti sebelum memilih titik akses.')
+    chosen = Location.objects.select_for_update().filter(pk=location.pk,active=True).exclude(category=Category.COORD).first()
+    if not chosen:
+        raise ValidationError('Titik akses tidak tersedia. Silakan pilih lokasi aktif lainnya.')
+    previous = app.location
+    app.location = chosen
+    app.responsible = None
+    app.routed_at = app.location_selected_at = timezone.now()
+    old = app.status
+    app.status = Status.WAIT_VERIFY
+    app.updated_at = timezone.now()
+    app.save()
+    AssignmentHistory.objects.create(application=app,old_location=previous,new_location=chosen,reason='Dipilih dan dikonfirmasi pemohon setelah unggah bukti')
+    p = Progress.objects.create(application=app,old_status=old,new_status=app.status,reason='Pemohon mengirim ke titik akses pilihannya',public_text=f'Permohonan dikirim ke {chosen.name}. Menunggu verifikasi Pelaksana di lokasi tersebut.')
+    audit(f'telegram:{user.pk}','application.sent_to_selected_location',app.pk)
+    queue_event(app,'dossier_ready',f'progress:{p.pk}')
+    return app, True

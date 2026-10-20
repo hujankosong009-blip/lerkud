@@ -7,7 +7,7 @@ from django.contrib.auth.views import LoginView
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Count
+from django.db.models import Count, OuterRef, Subquery, Max
 from django.http import HttpResponse
 from django.shortcuts import render, get_object_or_404, redirect
 from django.utils import timezone
@@ -21,6 +21,7 @@ from .forms import ProgressForm, AssignmentForm, InvitationForm
 
 class ThrottledLoginView(LoginView):
     template_name='service/login.html'
+    redirect_authenticated_user=True
     def post(self,request,*args,**kwargs):
         # Use the direct peer address; do not trust arbitrary forwarding headers.
         key=hashlib.sha256(request.META.get('REMOTE_ADDR','unknown').encode()).hexdigest()
@@ -57,16 +58,15 @@ def overview(request):
 @require_GET
 def applications(request):
     archived=request.GET.get('archived')=='1' and has_role(request.officer,Role.SUPERADMIN)
+    visible=cases_for(request.officer)
+    summary={'total':visible.count(),'waiting':visible.filter(status=Status.WAIT_VERIFY).count(),'handling':visible.filter(status__in=[Status.REVIEW,Status.FOLLOWUP,Status.NEED_INFO]).count(),'done':visible.filter(status=Status.DONE).count()}
     qs=cases_for(request.officer,include_deleted=archived).select_related('location','responsible')
     if archived: qs=qs.filter(deleted_at__isnull=False)
-    tab=request.GET.get('tab','applicant')
-    if tab not in ('applicant','screening','proof'): tab='applicant'
+    qs=qs.annotate(problem_text=Subquery(Screening.objects.filter(application_id=OuterRef('pk')).order_by('-version').values('text')[:1]),proof_count=Count('evidence',distinct=True))
     q=request.GET.get('q','').strip()
     from django.db.models import Q
     if q:
-        if tab=='screening': qs=qs.filter(Q(number__icontains=q)|Q(identity__name__icontains=q)|Q(screenings__text__icontains=q)).distinct()
-        elif tab=='proof': qs=qs.filter(Q(number__icontains=q)|Q(identity__name__icontains=q)|Q(evidence__verification_note__icontains=q)).distinct()
-        else: qs=qs.filter(Q(number__icontains=q)|Q(identity__name__icontains=q)|Q(identity__nik__icontains=q)|Q(identity__phone__icontains=q)|Q(identity__city__icontains=q)).distinct()
+        qs=qs.filter(Q(number__icontains=q)|Q(identity__name__icontains=q)|Q(identity__nik__icontains=q)|Q(identity__phone__icontains=q)|Q(identity__city__icontains=q)|Q(problem_text__icontains=q)|Q(location__name__icontains=q)).distinct()
     filters={'status':'status','category':'location__category','location':'location_id','city':'identity__city__icontains','district':'identity__district__icontains','village':'identity__village__icontains','responsible':'responsible_id'}
     for param,field in filters.items():
         value=request.GET.get(param,'').strip()
@@ -85,7 +85,7 @@ def applications(request):
     staff=Officer.objects.filter(pk__in=visible.values('responsible_id'))
     pager=Paginator(qs.order_by('-submitted_at'),20).get_page(request.GET.get('page'))
     params=request.GET.copy(); params.pop('page',None)
-    return render(request,'service/applications.html',context(request,page=pager,tab=tab,archived=archived,statuses=Status.choices,categories=[x for x in Category.choices if x[0]!=Category.COORD],locations=locations,staff=staff,params=params.urlencode()))
+    return render(request,'service/applications.html',context(request,page=pager,summary=summary,archived=archived,statuses=Status.choices,categories=[x for x in Category.choices if x[0]!=Category.COORD],locations=locations,staff=staff,params=params.urlencode()))
 
 @protected
 @require_http_methods(['GET','POST'])
@@ -157,6 +157,9 @@ def application_edit(request, pk=None):
     from django.db import transaction
     from .forms import IdentityForm
     from .services import edit_application, submit_registration, submit_screening
+    if pk is None:
+        from .services import require_coordinator
+        require_coordinator(request.officer)
     app = get_object_or_404(cases_for(request.officer),pk=pk) if pk else None
     initial = dict(app.identity) if app else {}
     if app:
@@ -245,7 +248,7 @@ def evidence_upload(request,pk):
                     begin_assessment(app.applicant.user,app)
                     app.refresh_from_db()
                 submit_evidence(None,app,read_upload(form.cleaned_data['screenshot']),submitted_by=request.officer)
-            messages.success(request,'Bukti disimpan sebagai kiriman petugas; tetap memerlukan verifikasi.')
+            messages.success(request,'Bukti tersimpan. Jika lokasi belum dipilih, pemohon perlu memilih dan mengonfirmasi titik akses melalui bot sebelum berkas dikirim.')
             return redirect('detail',pk=pk)
         except ValidationError as exc:
             form.add_error(None,exc)
@@ -325,7 +328,7 @@ def account_edit(request,pk):
     officer=get_object_or_404(Officer.objects.select_related('web_user'),pk=pk,web_user__isnull=False)
     web=officer.web_user
     initial={key:getattr(web,key) for key in ['username','first_name','last_name','email']}
-    initial.update(role=officer.role,active=officer.verified and web.is_active,all_locations=officer.all_locations,locations=officer.assignments.filter(active=True).values_list('location_id',flat=True))
+    initial.update(role=officer.role,active=officer.verified and web.is_active,location=officer.assignments.filter(active=True).values_list('location_id',flat=True).first())
     form=AccountEditForm(request.POST or None,initial=initial,officer=officer)
     if request.method=='POST' and form.is_valid():
         try:
@@ -350,3 +353,31 @@ def live_events(request):
         data['notification_failed']=Notification.objects.filter(status='failed').count()
     from django.http import JsonResponse
     return JsonResponse(data)
+
+
+
+@protected
+@require_http_methods(['POST'])
+def test_staff_notification(request, pk):
+    import uuid
+    from django.db import transaction
+    from .services import require_coordinator
+    if request.officer.pk != pk:
+        require_coordinator(request.officer)
+    target=get_object_or_404(Officer.objects.select_related('telegram','web_user'),pk=pk)
+    with transaction.atomic():
+        if target.telegram_id:
+            TelegramUser.objects.select_for_update().get(pk=target.telegram_id)
+        if not officer_active(target):
+            messages.error(request,'Akun belum aktif atau belum terikat ke satu titik akses yang valid.')
+        elif not target.telegram_id:
+            messages.error(request,'Akun belum ditautkan ke Telegram. Buat undangan untuk akun dan lokasi yang sama.')
+        elif not target.telegram.bot_notifications:
+            messages.error(request,'Petugas belum menyetujui notifikasi. Buka bot → Admin → Pengaturan Notifikasi → Setuju Notifikasi Bot.')
+        elif Notification.objects.filter(recipient=target.telegram,event='test_staff',queued_at__gte=timezone.now()-timedelta(minutes=1)).exists():
+            messages.error(request,'Pesan uji baru saja diantrekan. Tunggu satu menit sebelum menguji lagi.')
+        else:
+            Notification.objects.create(recipient=target.telegram,event='test_staff',channel='bot',dedupe_key='test:'+uuid.uuid4().hex)
+            audit(f'officer:{request.officer.pk}','notification.test_requested',target.pk)
+            messages.success(request,'Uji notifikasi diantrekan. '+('Mode masih SIMULASI; pesan nyata tidak dikirim.' if settings.NOTIFICATION_MODE!='live' else 'Biarkan run_bot berjalan, lalu periksa chat Telegram petugas dan log pengiriman.'))
+    return redirect('accounts' if has_role(request.officer,Role.SUPERADMIN) else 'notifications')

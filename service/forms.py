@@ -84,15 +84,14 @@ class BrandingForm(forms.ModelForm):
 
 class AccountCreateForm(UserCreationForm):
     role = forms.ChoiceField(label='Jenis akun',choices=Role.choices,initial=Role.PELAKSANA)
-    locations = forms.ModelMultipleChoiceField(label='Lokasi penugasan',queryset=Location.objects.filter(active=True),required=False)
-    all_locations = forms.BooleanField(label='Cakupan semua lokasi',required=False)
+    location = forms.ModelChoiceField(label='Titik akses akun Pelaksana',queryset=Location.objects.filter(active=True).exclude(category='BNN KOTA SURABAYA'),required=False)
     class Meta(UserCreationForm.Meta):
         model = get_user_model()
         fields = ['username','first_name','last_name','email']
     def clean(self):
         data=super().clean()
-        if data.get('role')==Role.PELAKSANA and not data.get('all_locations') and not data.get('locations'):
-            self.add_error('locations','Pilih lokasi atau cakupan semua lokasi.')
+        if data.get('role')==Role.PELAKSANA and not data.get('location'):
+            self.add_error('location','Pilih satu titik akses untuk akun Pelaksana.')
         return data
 
 class AccountEditForm(forms.Form):
@@ -101,8 +100,7 @@ class AccountEditForm(forms.Form):
     last_name = forms.CharField(label='Nama belakang',required=False,max_length=150)
     email = forms.EmailField(required=False)
     role = forms.ChoiceField(label='Jenis akun',choices=Role.choices)
-    locations = forms.ModelMultipleChoiceField(label='Lokasi penugasan',queryset=Location.objects.filter(active=True),required=False)
-    all_locations = forms.BooleanField(label='Cakupan semua lokasi',required=False)
+    location = forms.ModelChoiceField(label='Titik akses akun Pelaksana',queryset=Location.objects.filter(active=True).exclude(category='BNN KOTA SURABAYA'),required=False)
     active = forms.BooleanField(label='Akun aktif dan terverifikasi',required=False)
     new_password = forms.CharField(label='Password baru (kosongkan jika tetap)',required=False,widget=forms.PasswordInput)
     def __init__(self,*args,officer,**kwargs):
@@ -121,6 +119,6 @@ class AccountEditForm(forms.Form):
         return value
     def clean(self):
         data=super().clean()
-        if data.get('active') and data.get('role')==Role.PELAKSANA and not data.get('all_locations') and not data.get('locations'):
-            self.add_error('locations','Pilih lokasi atau cakupan semua lokasi.')
+        if data.get('active') and data.get('role')==Role.PELAKSANA and not data.get('location'):
+            self.add_error('location','Pilih satu titik akses untuk akun Pelaksana.')
         return data

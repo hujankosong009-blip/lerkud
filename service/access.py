@@ -1,6 +1,6 @@
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
-from .models import Application, OfficerAssignment, Role
+from .models import Application, OfficerAssignment, Role, Category
 
 
 def assignments(officer):
@@ -14,7 +14,9 @@ def officer_active(officer):
         return False
     if officer.web_user_id and not officer.web_user.is_active:
         return False
-    return officer.role == Role.SUPERADMIN or officer.all_locations or assignments(officer).exists()
+    if officer.role == Role.SUPERADMIN:
+        return True
+    return len(list(assignments(officer).exclude(location__category=Category.COORD).values_list('location_id',flat=True)[:2])) == 1
 
 
 def has_role(officer, role):
@@ -27,9 +29,10 @@ def cases_for(officer, include_deleted=False):
         qs = qs.filter(deleted_at__isnull=True)
     if not officer_active(officer):
         return qs.none()
-    if officer.role == Role.SUPERADMIN or officer.all_locations:
+    if officer.role == Role.SUPERADMIN:
         return qs
-    return qs.filter(Q(location_id__in=assignments(officer).values('location_id')) | Q(location__isnull=True))
+    location_id=assignments(officer).exclude(location__category=Category.COORD).values_list('location_id',flat=True).first()
+    return qs.filter(location_id=location_id,routed_at__isnull=False)
 
 
 def require_case(officer, application):

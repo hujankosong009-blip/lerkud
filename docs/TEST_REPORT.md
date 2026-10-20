@@ -1,58 +1,51 @@
-# Laporan pengujian — SALAM MANIS
+# Laporan pengujian SALAM MANIS — pilihan titik akses
 
-Pembaruan alur 20 Oktober 2026 (Asia/Jakarta). Python 3.12.14, Django 5.2.18, PostgreSQL lokal sementara 16.2 dan Chromium. Semua pemohon, lokasi, isi kendala, password tes dan gambar bukti dalam pengujian/screenshot adalah sintetis. Tidak ada pesan Telegram nyata dikirim.
+Dijalankan 20 Oktober 2026 (Asia/Jakarta), Python 3.12.14, Django 5.2.18, PostgreSQL sementara 16.2 dan Chromium. Seluruh pemohon, lokasi, kendala, gambar dan akun tes adalah sintetis. Transport Telegram ditiru; tidak ada pesan nyata dikirim dari lingkungan pengujian.
 
-## Hasil validasi
+## Hasil
 
 | Pemeriksaan | Hasil |
 |---|---|
-| Suite SQLite | 61 tes ditemukan: 58 lulus, 3 konkurensi PostgreSQL dilewati |
-| Suite PostgreSQL sementara | 61/61 lulus, tanpa skip; migrasi dan teardown selesai, exit 0 |
-| Upgrade database versi 0003 → 0004 | Lulus: peran lama dipetakan, cakupan dipertahankan, penugasan digabungkan, hak superuser Pelaksana dicabut, akun yang dicabut tidak hidup kembali, permohonan lama tetap ada, undangan lama dicabut |
-| Browser desktop 1440 × 1100 / ponsel 390 × 844 | Lulus: tanpa overflow horizontal halaman dan tanpa error JavaScript |
-| Pembaruan dashboard tanpa klik | Lulus: perubahan database dari proses lain menghasilkan pemberitahuan dan pembaruan tabel |
-| Tiga tabel dan pencarian | Lulus: Data pribadi, Skrining/kendala, Bukti Self Asesmen |
-| Alur browser | Lulus: login, verifikasi, upload screenshot, edit data, ubah keterangan/logo, tambah akun Pelaksana dan logout |
-| `makemigrations --check --dry-run` | Tidak ada perubahan model tanpa migrasi |
-| `manage.py check` | Tidak ada masalah |
-| `collectstatic --noinput` | Berkas statis baru berhasil dikumpulkan |
-| Backup SQLite sebelum update | Helper berhasil membuat backup konsisten tanpa mengubah database sumber |
+| Suite PostgreSQL | **73/73 lulus**, tanpa skip; migrasi dan teardown selesai, exit 0 |
+| Suite SQLite | **69 lulus, 4 dilewati** (konkurensi khusus PostgreSQL), 73 ditemukan |
+| Upgrade dari 0003 | Lulus: dua peran, cakupan lokasi eksplisit, hak Pelaksana dibatasi, penugasan/riwayat lama dipertahankan |
+| Upgrade dari 0004 | Lulus: berkas yang sudah ditugaskan tetap terkirim; bukti tanpa lokasi tetap ada dan menunggu konfirmasi pemohon; flag akses semua lokasi tidak berlaku |
+| Browser desktop/ponsel | Lulus pada 1440 × 1100 dan 390 × 844, tanpa error JavaScript atau overflow horizontal halaman |
+| Dashboard satu tabel | Lulus: data diri + teks permasalahan + titik akses + status, pencarian tunggal, detail, edit, upload bukti, verifikasi |
+| Logo dan tampilan | Lulus: file logo unggahan yang sama muncul pada beranda dan login; perubahan keterangan, logo dan akun melalui form berjalan |
+| Pembaruan tanpa klik | Lulus: perubahan database dari proses lain menghasilkan pemberitahuan dan pembaruan tabel |
+| Pemeriksaan model | `makemigrations --check --dry-run`: tidak ada perubahan tanpa migrasi |
+| Pemeriksaan Django | `manage.py check`: tidak ada masalah |
 
-## Cakupan penting suite
+## Bukti isolasi titik akses dan notifikasi
 
-- `/start` hanya dua akses utama, seluruh menu masyarakat, kelanjutan draft dan tidak ada penghapusan data oleh perpindahan menu.
-- Persetujuan ketentuan versi aktif, format NIK/telepon/RT/RW, alamat manual belum terverifikasi, ringkasan NIK tersamarkan, koreksi per field, pembatalan draft dan pesan registrasi yang diminta.
-- Idempotensi update Telegram, constraint satu permohonan aktif, dua submit registrasi bersamaan, dan satu pemenang aktivasi bersamaan.
-- Setelah registrasi langsung masuk kendala; setelah kendala masuk tautan eksternal; URL belum diisi memblokir langkah tersebut secara jelas tanpa membuat instrumen/skor/link rekaan.
-- Persetujuan notifikasi eksplisit: dapat ditolak, diaktifkan atau dicabut. Persetujuan penyimpanan bukti sebelum unggah.
-- Screenshot hanya diterima setelah data diri/kendala dan tautan tersedia. Kepemilikan diperiksa di server. Gambar palsu, SVG, kosong dan terlalu besar ditolak; gambar valid dienkode ulang.
-- Bukti bersifat privat: login/cakupan/keaktifan akun diperiksa pada endpoint gambar dan saat mengirim gambar ke chat pribadi bot. Tidak ada direktori media publik. Akses dicabut mencegah pengiriman meskipun respons bot sebelumnya sudah tersimpan.
-- Duplikasi screenshot tidak membuat versi ganda. Screenshot yang ditolak tidak dapat dikirim ulang identik lalu diklaim lengkap. Perbaikan menyimpan riwayat versi.
-- Pelaksana menerima notifikasi berkas lengkap setelah bukti masuk, bukan saat registrasi/kendala belum lengkap. Isi notifikasi umum dan memiliki tombol akses; tidak memuat identitas/screenshot/kendala.
-- Simulasi tidak mengirim transport nyata dan `sent_at` tetap kosong; kegagalan tidak menghapus permohonan. Retry mengikuti waktu tunggu Telegram. Persetujuan/cakupan diperiksa ulang saat pengiriman.
-- `run_bot` memulai worker notifikasi otomatis secara default; worker terpisah tetap opsional.
-- Hanya dua jenis akun, kewenangan pengelolaan ditolak bagi Pelaksana, pembatasan lokasi diterapkan sebelum pencarian, serta penonaktifan login web turut mencabut akses bot.
-- Verifikasi bukti eksplisit diperlukan sebelum kasus baru masuk Ditinjau; transisi tidak sah dan penyimpanan status lama ditolak. Catatan internal tidak masuk progres pemohon. Pembukaan kembali dibatasi Superadmin.
-- CRUD data: pencatatan manual memerlukan persetujuan asli yang sudah ada, edit kendala berversi, penghapusan ke arsip memerlukan alasan, arsip tetap menyimpan bukti/riwayat, dan pemulihan tidak membuka status secara diam-diam.
-- Kelola akun: pembuatan, perubahan peran, penonaktifan, perlindungan akun sendiri dan Superadmin terakhir; dua demosi bersamaan tetap mempertahankan satu Superadmin.
-- Logo/keterangan dan tautan resmi HTTPS dapat diubah; Pelaksana tidak dapat mengubahnya melalui POST palsu.
-- URL tombol Telegram, batas byte callback, sanitasi error token, pembatasan login/aktivasi, CSRF, aturan wilayah, pengingat idempoten, dan pengaitan penerima MTProto berbasis pengirim yang benar.
-- Penyimpanan waktu aware/UTC dan konversi tampilan Asia/Jakarta.
+- Sebelum konfirmasi lokasi, status **Menunggu Pilihan Titik Akses**. Bukti sudah tersimpan, tetapi Pelaksana A maupun B tidak dapat melihat permohonan dan tidak memperoleh notifikasi berkas baru.
+- Setelah pemohon memilih B dan menekan **Kirim ke lokasi ini**, status berubah ke Menunggu Verifikasi. Data muncul pada akun B. Transport Bot API tiruan menerima pesan ke chat Pelaksana B, bukan A, dengan tombol membuka berkas.
+- Flag `all_locations=True` dari versi lama tidak membolehkan A melihat kasus B. Pelaksana yang belum memiliki tepat satu lokasi aktif memerlukan perbaikan konfigurasi, bukan diberi akses antrean bersama.
+- Pencarian, detail, screenshot privat, pembaruan status, dan akses melalui callback bot memeriksa cakupan server. Mengetik nomor/URL/callback kasus lokasi lain tidak memberikan akses.
+- Pengiriman ke lokasi yang sama berulang bersifat idempoten. Upaya mengganti ke lokasi lain setelah terkirim ditolak bagi pemohon. Dua konfirmasi lokasi berbeda bersamaan hanya menghasilkan satu tujuan, satu riwayat penugasan dan satu peristiwa berkas baru.
+- Pilihan lokasi yang belum aktif, kategori koordinator, dan pemilihan sebelum bukti lengkap ditolak. Jika kategori belum berisi lokasi aktif, bukti tetap tersimpan dan bot menjelaskan kondisinya.
+- Jika Superadmin memindahkan penugasan, penerima lama tidak menerima notifikasi baru, dan antrean lama diperiksa ulang sebelum pengiriman. Riwayat publik menyebut lokasi penanganan yang benar; lokasi hasil pemindahan tidak diklaim sebagai pilihan pemohon.
+- Tombol **Uji notifikasi Telegram** dapat mengantrekan pesan uji ke akun yang tepat. Pengujian memastikan status sent hanya setelah respons sukses transport, persetujuan wajib, akun harus tertaut/aktif, cooldown satu menit, serta Pelaksana tidak dapat menguji akun orang lain.
 
-## Screenshot hasil browser
+## Cakupan lain yang dipertahankan
+
+Registrasi bertahap/draft/edit, persetujuan ketentuan aktif, validasi identitas, penyamaran NIK, pencegahan duplikasi pengiriman, batas kepemilikan, skrining berversi, tautan eksternal tanpa skor rekaan, persetujuan unggah, validasi gambar dan metadata, screenshot privat, verifikasi eksplisit, transisi sah, catatan internal terpisah dari progres publik, arsip/pemulihan, CSRF, rate limit, sanitasi token, retry/flood wait, simulasi, worker bawaan bot, pengingat idempoten, waktu Asia/Jakarta, kelola akun dan perlindungan Superadmin terakhir.
+
+Tautan aktivasi akun yang terikat lokasi diperiksa terhadap peran/lokasi akun yang masih berlaku. Profil Telegram lama tanpa login web dapat ditautkan ke akun lokasi melalui undangan baru yang sah; profil lama dicabut dan riwayat dipertahankan. Target yang tidak valid tidak mengubah profil lama.
+
+## Screenshot
 
 - [Dashboard desktop](dashboard-desktop.png)
 - [Dashboard ponsel](dashboard-mobile.png)
 
-Database browser sintetis terpisah dan dihapus setelah tes. Tidak ada akun atau fasilitas contoh yang ditambahkan ke database pengembangan.
+Screenshot berasal dari database sementara dan memakai identitas teks bawaan. Logo unggahan diuji dengan gambar sintetis, bukan dengan mengarang ulang logo institusi. Untuk memakai logo asli, unggah berkasnya di Tampilan dashboard; logo tersebut tampil pada sidebar, beranda, dan halaman login. Gambar logo yang terlihat di percakapan belum tersedia sebagai berkas asli di workspace saat validasi.
 
-## Batas bukti
+## Batas pengujian
 
-- Pengiriman Bot API/MTProto nyata tidak dijalankan; semua transport Telegram ditiru. Pengiriman operasional membutuhkan token benar, mode live, persetujuan, koneksi Telegram dan bot/worker yang tetap berjalan.
-- Notifikasi sistem browser bergantung dukungan/izin browser dan halaman yang masih terbuka. Ini bukan implementasi web push ketika tab ditutup. Pemberitahuan/penanda pada halaman diuji langsung.
-- Tautan BOSS BNN nyata belum diberikan. Bukti yang disimpan adalah screenshot kiriman pemohon/petugas, bukan hasil yang diambil/terverifikasi otomatis dari penyedia.
-- Referensi wilayah/fasilitas resmi belum diisi. Tidak ada instrumen klinis, skor, diagnosis atau keputusan RAJAL/RANAP yang diaktifkan.
-- Pengujian berlangsung di Linux. Skrip PowerShell pembaruan disediakan untuk Windows, tetapi belum dieksekusi pada Windows pengguna. Helper backup Python dan alur aplikasi yang dipakai skrip telah dijalankan.
-- PostgreSQL produksi, reverse proxy HTTPS, sertifikat produksi, deployment 24 jam, publikasi environment dan pemulihan tugas cloud baru tidak diklaim telah diverifikasi.
-
-Dokumen ini menggantikan laporan versi awal; perubahan perilaku baru mengikuti permintaan dua peran serta bukti self asesmen, sementara data versi lama dijaga melalui migrasi.
+- **Belum ada uji pengiriman Telegram nyata di lingkungan ini.** Hasil tiruan membuktikan pemilihan penerima dan pemrosesan antrean, bukan popup pada ponsel pengguna. Gunakan tombol uji pada instalasi operasional dengan token benar, mode live, bot/worker berjalan, akun tertaut, persetujuan, dan izin notifikasi Telegram pada perangkat.
+- Tidak ada fasilitas, kontak, instrumen, skor atau hasil klinis rekaan. Pemohon harus memilih titik akses yang benar-benar diaktifkan Superadmin dan memiliki akun Pelaksana yang disiapkan pengelola.
+- Situs BNN tidak diintegrasikan melalui webhook/API. Screenshot adalah bukti kiriman, bukan hasil terverifikasi dari penyedia.
+- Notifikasi browser diuji untuk halaman yang terbuka, bukan web push setelah tab ditutup.
+- Skrip PowerShell disediakan untuk Windows tetapi pengujian otomatis berjalan di Linux. Data pengguna Windows tidak diubah dari lingkungan ini; jalankan backup dan migrasi di komputer pengguna setelah menyalin source baru.
+- HTTPS/DB produksi, sesi MTProto nyata, publikasi cloud dan pemulihan snapshot baru belum diverifikasi.

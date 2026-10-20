@@ -1,4 +1,4 @@
-"""Exercise an actual 0003 -> 0004 upgrade on an isolated legacy database."""
+"""Exercise an actual 0003 -> latest upgrade on an isolated legacy database."""
 import os
 import secrets
 import subprocess
@@ -38,7 +38,7 @@ from service.access import officer_active
 manager=Officer.objects.get(web_user__username='legacy-manager')
 assert manager.role=='SUPERADMIN' and manager.assignments.count()==1
 coord=Officer.objects.get(web_user__username='legacy-coord')
-assert coord.role=='PELAKSANA' and coord.all_locations
+assert coord.role=='PELAKSANA' and not coord.all_locations
 assert not coord.web_user.is_superuser and not coord.web_user.is_staff
 local=Officer.objects.get(web_user__username='legacy-local')
 assert local.role=='PELAKSANA' and not local.all_locations
@@ -46,5 +46,5 @@ assert not officer_active(Officer.objects.get(web_user__username='revoked-manage
 assert Application.objects.get(number='SM-LEGACY-TEST').legacy_submission
 assert ActivationCode.objects.get(digest='legacy-hash').revoked
 assert TelegramUser.objects.get(telegram_id=999001).notification_decided
-print('Legacy upgrade passed: two roles, deduplicated scope, permissions, revoked invites, preserved applications.')
+print('Legacy upgrade passed: two roles, strict location scope, permissions, revoked invites, preserved applications.')
 ''')

@@ -8,6 +8,7 @@ class Status(models.TextChoices):
     WAIT_SCREEN = 'MENUNGGU_SKRINING', 'Menunggu Skrining'
     WAIT_ASSESS = 'MENUNGGU_SELF_ASESMEN', 'Menunggu Self Asesmen'
     WAIT_PROOF = 'MENUNGGU_BUKTI', 'Menunggu Bukti Self Asesmen'
+    WAIT_LOCATION = 'MENUNGGU_TITIK_AKSES', 'Menunggu Pilihan Titik Akses'
     WAIT_VERIFY = 'MENUNGGU_VERIFIKASI', 'Menunggu Verifikasi'
     REVIEW = 'SEDANG_DITINJAU', 'Sedang Ditinjau Petugas'
     NEED_INFO = 'PERLU_KELENGKAPAN', 'Perlu Kelengkapan'
@@ -89,6 +90,10 @@ class Officer(models.Model):
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.PELAKSANA)
     all_locations = models.BooleanField(default=False, verbose_name='Cakupan semua lokasi')
     verified = models.BooleanField(default=False)
+    @property
+    def operational(self):
+        from .access import officer_active
+        return officer_active(self)
     def __str__(self):
         return f'{self.web_user.get_username() if self.web_user else "Petugas #"+str(self.pk)} · {self.get_role_display()}'
 
@@ -129,6 +134,8 @@ class Application(models.Model):
     deleted_by = models.ForeignKey(Officer, related_name='+', null=True, blank=True, on_delete=models.PROTECT)
     delete_reason = models.TextField(blank=True)
     assessment_url = models.URLField(blank=True)
+    routed_at = models.DateTimeField(null=True, blank=True)
+    location_selected_at = models.DateTimeField(null=True, blank=True)
     submitted_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
     class Meta:

@@ -36,6 +36,10 @@ async def mtproto_send(sender_id):
 def deliver(notification):
     if settings.NOTIFICATION_MODE=='simulation': return 'simulated',''
     if settings.NOTIFICATION_MODE!='live': raise DeliveryError('invalid_notification_mode')
+    if notification.event == 'test_staff':
+        from .access import officer_active
+        if not officer_active(getattr(notification.recipient,'officer',None)):
+            raise DeliveryError('recipient_access_revoked')
     # Authorization is rechecked at delivery, including revocations and reassignment.
     if notification.application_id:
         app=notification.application
@@ -46,13 +50,15 @@ def deliver(notification):
             if not officer or not cases_for(officer).filter(pk=app.pk).exists(): raise DeliveryError('recipient_access_revoked')
     if notification.channel=='bot':
         if not notification.recipient.bot_notifications: raise DeliveryError('recipient_not_consented')
-        labels = {'dossier_ready':'📬 Berkas lengkap baru siap diverifikasi.','progress':'🔔 Progres permohonan diperbarui.','closed':'📁 Permohonan telah ditutup.','registration':'✅ Data diri telah diterima.','screening':'💬 Kendala Anda tersimpan.','assignment':'📍 Penugasan permohonan berubah.','reminder':'⏰ Ada permohonan yang membutuhkan perhatian.'}
+        labels = {'test_staff':'🔔 UJI NOTIFIKASI SALAM MANIS · Jika pesan ini muncul, pengiriman bot ke akun Anda berhasil.','evidence_received':'✅ Bukti tersimpan. Pilih dan konfirmasi titik akses melalui bot agar berkas dikirim.','dossier_ready':'📬 Berkas lengkap baru siap diverifikasi.','progress':'🔔 Progres permohonan diperbarui.','closed':'📁 Permohonan telah ditutup.','registration':'✅ Data diri telah diterima.','screening':'💬 Kendala Anda tersimpan.','assignment':'📍 Penugasan permohonan berubah.','reminder':'⏰ Ada permohonan yang membutuhkan perhatian.'}
         text = labels.get(notification.event, '🔔 Ada pembaruan layanan SALAM MANIS.')
         buttons = []
         if notification.application_id:
             own = notification.application.applicant.user_id == notification.recipient_id
             buttons = [('Lihat progres saya' if own else 'Buka berkas permohonan', ('my:' if own else 'admin_case:')+str(notification.application_id))]
-        result=bot_call('sendMessage',{'chat_id':notification.recipient.telegram_id,'text':text+'\n\nBuka rincian melalui tombol berikut. Pesan ini tidak memuat data pribadi.', 'reply_markup':keyboard(buttons)})
+        payload={'chat_id':notification.recipient.telegram_id,'text':text+('\n\nBuka rincian melalui tombol berikut. Pesan ini tidak memuat data pribadi.' if buttons else '\n\nTidak ada data pribadi dalam pesan uji ini.')}
+        if buttons: payload['reply_markup']=keyboard(buttons)
+        result=bot_call('sendMessage',payload)
         return 'sent',str(result['message_id'])
     if notification.channel=='mtproto':
         recipient=NotificationRecipient.objects.filter(user=notification.recipient,active=True).first()
