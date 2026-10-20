@@ -4,134 +4,186 @@
 
 *Mendekatkan Akses, Menghubungkan Layanan.*
 
-Aplikasi Python/Django untuk registrasi melalui bot Telegram, penyampaian permasalahan awal, tindak lanjut petugas, dan dashboard sesuai penugasan lokasi. Bot, dashboard, dan pekerja menggunakan database serta layanan otorisasi/transaksi yang sama.
+Aplikasi Django/Python untuk pelayanan melalui bot Telegram dan dashboard. PostgreSQL digunakan di produksi; SQLite tersedia untuk pengembangan lokal. Semua antarmuka menggunakan database dan aturan akses yang sama.
 
-Versi pertama menyediakan seluruh alur registrasi dan Skrining naratif. Direktori tujuh kategori dimulai **tanpa fasilitas**. Self asesmen tetap **nonaktif**; tidak ada instrumen, skor, diagnosis, keputusan RAJAL/RANAP, atau rekomendasi klinis rekaan. Notifikasi dimulai dalam **simulasi**, bukan pengiriman nyata.
+## Perubahan alur versi ini
 
-## Mulai pengembangan
+**Data diri → Skrining/kendala → Self Asesmen pada website resmi → konfirmasi dan unggah screenshot → antrean verifikasi Pelaksana → tindak lanjut.**
 
-Prasyarat: Python 3.12+, akses registry Python. Gunakan checkout yang ada; tugas cloud sudah terisolasi dan tidak memerlukan Git worktree tambahan.
+- Setelah kirim registrasi, bot langsung meminta kendala. Setelah kendala dikirim, bot langsung menawarkan langkah Self Asesmen.
+- Tautan BOSS BNN / Self Asesmen diisi **Superadmin → Tampilan dashboard & Self Asesmen**. Belum ada tautan bawaan. Tanpa tautan, proses berhenti secara jelas pada tahap menunggu Self Asesmen; data sebelumnya tetap tersimpan.
+- Website penyedia menampilkan hasilnya sendiri. SALAM MANIS menyimpan **screenshot bukti yang dikirim pemohon**, bukan menarik skor/hasil terverifikasi dari penyedia. Tidak ada integrasi API, instrumen, skor, diagnosis, atau keputusan klinis yang dibuat sendiri.
+- Pemohon menyetujui penyimpanan bukti sebelum mengunggah Foto melalui chat pribadi bot. Gambar JPEG/PNG/WebP maksimal 5 MB diperiksa dan dienkode ulang untuk menghapus metadata. File palsu/SVG/resolusi berlebihan ditolak.
+- Setelah seluruh berkas lengkap, Pelaksana sesuai cakupan akses memperoleh notifikasi dengan tombol membuka berkas. Notifikasi tidak memuat NIK, nama, isi kendala, screenshot, atau catatan sensitif pada layar kunci. Berkas lengkap tersedia melalui bot terautorisasi dan dashboard. Pelaksana dapat menekan **Lihat bukti screenshot** di bot; gambar dikirim hanya ke chat pribadi yang masih berwenang, bukan sebagai lampiran notifikasi otomatis.
+- Pelaksana memverifikasi bukti secara eksplisit. Bukti sesuai → Sedang Ditinjau; perlu perbaikan → Perlu Kelengkapan. Verifikasi berkas bukan diagnosis atau verifikasi langsung oleh penyedia asesmen.
 
-```bash
-cd /workspace/lerkud
-./scripts/install.sh
-set -a; . ./.env; set +a
-.venv/bin/python manage.py test
-./scripts/start_web.sh
+## Dua jenis akun
+
+**Jenis akun, bukan batas jumlah akun.** Superadmin dapat membuat beberapa akun dari kedua jenis berikut:
+
+| Jenis | Tugas |
+|---|---|
+| Superadmin | Kelola akun, cakupan lokasi, undangan Telegram, direktori, ketentuan, tautan Self Asesmen, logo/keterangan dashboard, data dan arsip |
+| Pelaksana | Membaca berkas dalam cakupannya, membantu pencatatan/koreksi, melihat bukti privat, memverifikasi dan memperbarui perjalanan permohonan |
+
+Pelaksana dapat dibatasi lokasi atau diberi cakupan semua lokasi oleh Superadmin. Antrean yang belum ditetapkan lokasi tersedia bagi Pelaksana aktif untuk tindak lanjut. Permohonan yang telah ditugaskan ke lokasi lain tidak dapat dibaca petugas di luar cakupannya. Superadmin memiliki akses pengelolaan lintas lokasi. Jenis akun tidak memberi kewenangan klinis otomatis.
+
+Penghapusan permohonan **hanya oleh Superadmin**, memerlukan alasan, dan dilakukan sebagai **arsip**, bukan penghapusan permanen. Riwayat dan bukti dipertahankan; pemulihan tersedia melalui daftar Arsip. Akun dinonaktifkan melalui edit akun. Akun sendiri dan Superadmin aktif terakhir dilindungi.
+
+## Dashboard
+
+Halaman utama langsung menuju Data Pemohon dengan tiga tabel:
+
+1. **Data pribadi:** pencarian nomor, nama, NIK, telepon, atau kota.
+2. **Skrining/kendala:** pencarian nomor, nama, atau isi kendala.
+3. **Bukti Self Asesmen:** pencarian nomor, nama, atau catatan verifikasi.
+
+Setiap tabel menampilkan status perjalanan dan aksi ikon dengan label aksesibilitas: tambah, lihat, edit, unggah, dan hapus ke arsip sesuai kewenangan. Pencarian selalu dilakukan setelah pembatasan akses. Riwayat versi kendala disimpan saat dikoreksi. Pencatatan manual memerlukan pengguna Telegram yang telah menyetujui ketentuan; petugas tidak boleh mengarang persetujuan pemohon.
+
+**Tampilan dashboard** menyediakan penggantian logo gambar, nama, keterangan singkat, deskripsi, dan tautan resmi HTTPS Self Asesmen. **Kelola akun** menyediakan pembuatan akun, perubahan password/peran/cakupan, dan penonaktifan. Login web dan aktivasi Telegram tetap terpisah.
+
+## Notifikasi gratis dan cepat
+
+Rekomendasi utama adalah **Telegram Bot API**: tidak memerlukan akun MTProto atau biaya provider pesan. Kecepatan aktual bergantung koneksi, Telegram, dan proses aplikasi tetap berjalan. Pengaturan suara/pop-up di aplikasi Telegram/perangkat pengguna tetap harus diaktifkan oleh pengguna.
+
+**`run_bot` sekarang otomatis menjalankan pekerja notifikasi** di latar, sehingga tidak perlu lagi menjalankan `run_notifications --once` atau worker ketiga untuk penggunaan lokal. Worker memeriksa antrean setiap sekitar 1 detik, terpisah dari long polling pesan; kegagalan pengiriman tidak membatalkan penyimpanan data.
+
+Syarat pengiriman nyata:
+
+```dotenv
+TELEGRAM_BOT_TOKEN=token_dari_BotFather
+NOTIFICATION_MODE=live
+NOTIFICATION_CHANNEL=bot
 ```
 
-Installer membuat `.venv`, memasang versi terkunci, membuat `.env` lokal dengan kunci acak **hanya jika belum ada**, menjalankan migrasi dan pemeriksaan Django. SQLite hanya diperbolehkan ketika `DJANGO_DEBUG=true`. `.env` tidak otomatis dimuat Python: gunakan perintah `set -a` di setiap terminal atau injeksikan variabel melalui pengelola proses. Jangan menggunakan data pribadi nyata dalam mode pengembangan/debug.
+- Pemohon ditawari persetujuan notifikasi sebelum registrasi. Pilihan menolak dan menonaktifkan tetap tersedia.
+- Pelaksana menekan **Setuju notifikasi & buka menu** setelah aktivasi, atau mengaktifkannya melalui **Pengaturan Notifikasi**. Tanpa persetujuan, pengiriman dicatat gagal secara jelas.
+- Untuk menguji, buat pembaruan baru setelah mengaktifkan mode live dan persetujuan. Pesan lama yang telah ditandai **Simulasi tidak dikirim ulang**.
+- Dashboard menampilkan penanda jumlah berkas menunggu verifikasi dan pemberitahuan otomatis setiap 5 detik selama halaman terbuka. Tabel aktif diperbarui tanpa mengganggu form POST yang sedang diedit. Notifikasi browser dapat diaktifkan dengan tombol izin; beberapa browser ponsel tidak mendukung notifikasi sistem tanpa service worker, tetapi penanda halaman tetap bekerja. Ini **bukan push browser ketika tab ditutup**.
+- Dashboard menampilkan log antre/simulasi/gagal/terkirim, percobaan, message ID dan waktu. Status terkirim hanya dicatat setelah Telegram berhasil menerima pengiriman.
 
-Dashboard tersedia pada port 8000. Login diperlukan; tidak ada akun atau kata sandi bawaan. `/health/` memeriksa akses database tanpa menampilkan data. Jalankan server pengembangan hanya di lingkungan pengembangan terkontrol.
+Default tetap **simulation** untuk instalasi/pengujian aman. Mengisi token lalu menjalankan `run_bot` akan membalas chat nyata, walaupun mode notifikasi masih simulasi. Gunakan bot uji dahulu. Jangan membagikan token atau traceback yang berisi token. Transport memvalidasi token, menghapus spasi tepi, dan menyamarkan error agar URL berkredensial tidak tercetak.
 
-## Membuat pengelola awal dan petugas
+Untuk produksi, worker terpisah tersedia:
 
 ```bash
-# Setelah memuat environment seperti di atas:
+python manage.py run_bot --no-notifications
+python manage.py run_notifications --reminders
+```
+
+Gunakan satu bot poller per token. Pada SQLite gunakan satu worker; PostgreSQL mendukung klaim antrean melalui row lock. Pengingat dideduplikasi harian, retry maksimum 5 kali dengan backoff dan waktu tunggu Telegram. Lease 5 menit memulihkan worker mati. Pengiriman jaringan **at least once**, sehingga crash setelah pengiriman diterima tetapi sebelum commit log bisa menyebabkan pesan umum berulang; tidak ada klaim exactly once.
+
+## Menjalankan di VS Code Windows — instalasi baru
+
+Pasang Python 3.12+ dan ekstensi Python Microsoft. Buka folder yang langsung berisi `manage.py`, lalu gunakan PowerShell:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+.\.venv\Scripts\python.exe -c "from pathlib import Path; import secrets; p=Path('.env'); p.write_text(p.read_text().replace('replace-with-a-random-local-secret', secrets.token_hex(48)))"
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py createsuperuser
+.\.venv\Scripts\python.exe manage.py bootstrap_manager USERNAME_ANDA
+.\.venv\Scripts\python.exe manage.py runserver
+```
+
+**`.env` kini dimuat otomatis** tanpa blok PowerShell tambahan. Variabel yang diinjeksikan process manager tetap memiliki prioritas. Jika terminal lama pernah memuat environment secara manual, buka terminal baru setelah mengubah `.env` agar nilai lama tidak menimpa berkas baru. Jangan menyalin `.env.example` menimpa `.env` yang telah berisi token/kunci Anda.
+
+Dashboard memerlukan akun hasil `createsuperuser` dan `bootstrap_manager`. Tidak ada username/password bawaan. Di terminal kedua, setelah mengisi token bot dan mode notifikasi yang diinginkan:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py run_bot
+```
+
+Biarkan kedua terminal tetap berjalan. Server pengembangan tidak berjalan ketika komputer dimatikan. Untuk menutup, Ctrl+C. Endpoint `/health/` memeriksa database; `/login/` adalah halaman masuk. Tidak perlu PostgreSQL untuk mencoba lokal; `DJANGO_DEBUG=true` mengizinkan SQLite. Jangan menggunakan data pribadi nyata dalam mode debug.
+
+## Memperbarui instalasi Windows yang sudah berisi data
+
+**Jangan menghapus folder lama, `.env`, `.venv`, `db.sqlite3`, atau data backup.**
+
+1. Hentikan dashboard, bot, dan worker lama dengan Ctrl+C di masing-masing terminal.
+2. Unduh ZIP versi terbaru dari GitHub ke folder sementara. Salin source code baru ke folder proyek lama dan ganti berkas kode yang sama. ZIP tidak berisi `.env`, database, atau `.venv`, sehingga berkas lokal tersebut harus tetap dipertahankan.
+3. Buka terminal PowerShell baru di folder proyek lama. Jalankan:
+
+   ```powershell
+   .\scripts\update_windows.ps1
+   ```
+
+   Jika kebijakan komputer melarang skrip PowerShell, gunakan perintah manual berikut tanpa mengubah kebijakan komputer.
+
+   ```powershell
+   .\.venv\Scripts\python.exe scripts\backup_local.py
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   .\.venv\Scripts\python.exe manage.py migrate
+   .\.venv\Scripts\python.exe manage.py check
+   ```
+
+4. Jalankan kembali `runserver` dan `run_bot` di dua terminal. Worker notifikasi terpisah yang lama tidak diperlukan untuk mode lokal ini.
+
+Skrip membuat backup SQLite yang konsisten di `backups/` sebelum memasang dependensi dan bermigrasi. Backup mengandung data pribadi jika database lama berisi data pribadi: simpan secara privat dan jangan unggah ke GitHub. Untuk PostgreSQL gunakan backup/restore terkelola dan `pg_dump` sebelum menjalankan migrasi, bukan skrip backup SQLite.
+
+Migrasi 0004 mempertahankan permohonan/profil/riwayat lama:
+
+- SYSTEM aktif → Superadmin; COORD/LOCAL → Pelaksana. Cakupan lintas lokasi COORD lama dipertahankan. Penugasan lokasi ganda digabungkan.
+- Hak staff/superuser lama pada akun yang menjadi Pelaksana dicabut. Penugasan yang telah dicabut tidak dihidupkan kembali.
+- Permohonan lama ditandai **versi sebelumnya**, bukan diberi screenshot atau hasil asesmen rekaan. Permohonan baru mengikuti alur tiga langkah. Kasus lama tetap dapat ditangani sesuai status lamanya.
+- Kode undangan lama yang belum digunakan dicabut agar undangan baru memakai dua peran secara eksplisit. Buat ulang kode jika diperlukan.
+- Migrasi data ini sengaja tidak memiliki rollback otomatis yang menebak peran lama. Pemulihan versi lama membutuhkan backup dan source versi sebelumnya.
+
+## Menambah akun dan menghubungkan Telegram
+
+1. Superadmin membuka **Kelola akun**, membuat username/password, memilih Superadmin/Pelaksana, serta cakupan/lokasi. Gunakan akun aktif yang telah diverifikasi institusi.
+2. Di **Pengelolaan → Tautkan petugas ke Telegram**, pilih **akun yang sama**, lokasi, peran yang sesuai dan masa berlaku. Kode acak tampil satu kali, hanya hash disimpan, dan berlaku sekali pakai.
+3. Petugas memilih Admin di bot, memasukkan kode, lalu menyetujui notifikasi. Akun web dan Telegram akan berada pada satu profil petugas. Tidak perlu memasukkan kode setiap saat.
+4. Akun Telegram yang sudah terkait petugas lain tidak dipindahkan secara diam-diam melalui kode. Jika instalasi lama memiliki dua profil untuk orang yang sama, pengelola harus memverifikasi dan menata penautan melalui administrasi petugas; jangan menautkan akun tanpa pemeriksaan identitas.
+5. Perubahan akun/peran mencabut undangan belum terpakai untuk akun tersebut. Pencabutan akun atau penugasan diperiksa ulang pada setiap tindakan dan saat pengiriman notifikasi.
+
+## Linux/macOS dan cloud
+
+Gunakan checkout yang ada; tugas cloud sudah terisolasi dan tidak memerlukan worktree Git tambahan.
+
+```bash
+bash scripts/install.sh
 .venv/bin/python manage.py createsuperuser
-.venv/bin/python manage.py bootstrap_manager NAMA_USERNAME
-```
-
-Login dashboard lalu buka **Pengelolaan**. Bootstrap menautkan superuser ke peran **SYSTEM** di BNN Kota Surabaya, yang memang disebut dalam spesifikasi. Lokasi koordinator ini tidak masuk direktori tujuh kategori. Pengelola teknis tidak otomatis dapat membaca/memproses permohonan. Jika pengguna berwenang sebagai Koordinator BNN, pengelola harus menambahkan penugasan **COORD** secara terpisah.
-
-1. Tambahkan lokasi nyata melalui Pengelolaan → Titik akses; jangan mengisi fasilitas uji pada instalasi operasional. Lengkapi kategori, alamat/wilayah, kontak, jam layanan, tautan lokasi HTTPS, dan IBM/AP jika kelurahan. Lokasi baru tidak aktif secara bawaan. Aktifkan hanya data yang disahkan.
-2. Pengelola superuser membuat akun web petugas melalui administrasi Django → Users. Untuk petugas biasa, gunakan akun aktif tanpa superuser, tanpa izin pengelolaan akun. Akun dashboard dan kode aktivasi Telegram adalah mekanisme terpisah.
-3. Buat **Akun petugas** dan tautkan `web_user` yang telah diverifikasi. Centang `verified`, lalu tambahkan **Penugasan petugas** dengan lokasi, peran LOCAL/COORD/SYSTEM, dan status aktif. Akun SYSTEM yang menggunakan administrasi Django juga memerlukan `is_staff`. Hanya pengelola akun yang diberi kewenangan yang boleh menjadi superuser.
-4. Untuk akses Telegram, buat undangan di **Pengelolaan → Buat undangan aktivasi Telegram**. Kode acak muncul satu kali, kedaluwarsa dalam 1–168 jam (default 24), dan hanya hash yang disimpan. Berikan kode melalui kanal institusi yang aman, bukan URL dashboard.
-5. Petugas memilih Admin di bot lalu memasukkan kode. Sistem membuat/menautkan akun petugas Telegram dan penugasan berdasarkan undangan. Untuk menyatukan login web dengan akun Telegram ini, buka Akun petugas, verifikasi identitas petugas, dan tautkan `web_user` ke **baris petugas Telegram yang sama**. Jangan membuat dua profil untuk orang yang sama atau menautkan akun tanpa verifikasi.
-6. Akses dicabut dengan menonaktifkan penugasan atau `verified`. Pencabutan diperiksa lagi pada setiap tindakan dan saat pengiriman notifikasi. Kode belum terpakai dapat dicabut melalui Pengelolaan → Pencabutan kode.
-
-Satu orang dapat tetap memakai menu masyarakat; perpindahan menu tidak memberikan atau menghapus peran. Admin lokal hanya melihat kasus yang ditugaskan ke lokasinya; COORD dapat melihat lintas lokasi, menetapkan lokasi/petugas, dan membuka kembali kasus dengan alasan. SYSTEM mengelola konfigurasi dan log teknis; hak itu sendiri tidak memberi akses isi kasus.
-
-## Menjalankan bot
-
-Isi `TELEGRAM_BOT_TOKEN` melalui environment yang aman, dan `DASHBOARD_URL` dengan alamat HTTPS operasional. Jangan menaruh token pada source, argumen perintah, screenshot, atau log.
-
-```bash
-set -a; . ./.env; set +a
+.venv/bin/python manage.py bootstrap_manager USERNAME_ANDA
+bash scripts/start_web.sh
+# Terminal kedua, hanya jika bot telah sengaja dikonfigurasi:
 .venv/bin/python manage.py run_bot
 ```
 
-Perintah ini **menghubungi Telegram dan membalas pesan nyata**, termasuk ketika notifikasi masih mode simulasi. Jalankan hanya dengan bot uji/operasional yang sengaja dikonfigurasi. Gunakan satu proses polling per bot; webhook aktif perlu dikelola operator secara sengaja di Telegram, bukan dihapus otomatis aplikasi. Jaringan Bot API membutuhkan HTTPS ke `api.telegram.org`.
+Installer menjaga `.env` yang ada. Kunci lokal acak hanya dibuat jika belum ada `.env`.
 
-Percakapan layanan hanya menerima chat pribadi. `/start` menampilkan tepat Masyarakat/Admin dan tidak menghapus draft. Registrasi disimpan per field, dapat dilanjutkan/diedit per field, ringkasan NIK disamarkan, persetujuan versi aktif diperiksa ulang sebelum pengiriman. Draft Skrining juga bertahan saat berpindah menu. Identitas alamat manual diberi penanda belum terverifikasi; NIK hanya diperiksa formatnya, bukan Dukcapil. Permohonan aktif dilanjutkan, bukan dibuat ulang.
+## Produksi
 
-## Ketentuan, wilayah, dan layanan
-
-- Migrasi menyertakan ketentuan awal versi 1.0. Isi versi yang sudah dibuat tidak dapat diedit melalui dashboard: buat versi baru, nonaktifkan versi lama, lalu aktifkan versi baru. Persetujuan mencatat versi/waktu; pengiriman baru memerlukan versi aktif.
-- Wilayah belum memiliki referensi resmi: kota/kecamatan/kelurahan adalah input manual, tanpa klaim verifikasi. Aturan penugasan yang benar-benar diketahui dapat ditambahkan di **Aturan wilayah**; pencocokan harus sesuai ketiga field. Tanpa kecocokan, permohonan masuk antrean koordinator, tanpa menganggap domisili sebagai lokasi penanganan.
-- Pengalihan lokasi/petugas hanya oleh koordinator, dengan alasan dan riwayat. Data domisili tetap terpisah.
-- Status dibatasi layanan server. Skrining/kelengkapan → Menunggu Verifikasi; petugas → Ditinjau → Perlu Kelengkapan / Dalam Tindak Lanjut → Selesai. Pembatalan memerlukan alasan. Pembukaan kembali hanya COORD, dengan alasan dan tanpa permohonan aktif lain. Catatan pada status yang sama boleh dicatat sebagai pembaruan.
-- **Selesai berarti proses permohonan ditutup sesuai catatan, bukan kesembuhan.**
-- Progres pemohon memeriksa hubungan dengan akun Telegram. Pencarian NIK/nomor permohonan tidak pernah menjadi bukti akses. Catatan internal dan alasan internal tidak masuk progres publik.
-- Konfigurasi self asesmen menyediakan versi, pertanyaan/pilihan, aturan penilaian, persetujuan, dan struktur jawaban/hasil. Tidak ada tombol aktivasi atau mesin skor pada v1. Pengaktifan instrumen yang telah ditetapkan memerlukan pengembangan lanjutan dan validasi pengelola berwenang.
-
-## Antrean notifikasi dan pengingat
+Gunakan `DJANGO_DEBUG=false`, kunci acak kuat, host resmi pada `DJANGO_ALLOWED_HOSTS`, PostgreSQL `DATABASE_URL`, HTTPS, reverse proxy tepercaya, dan process manager. Default `DB_SSLMODE=verify-full`; sediakan CA tepercaya (`PGSSLROOTCERT` jika perlu). TLS tidak dimatikan untuk mengatasi masalah koneksi produksi. Tes PostgreSQL lokal hanya memakai Unix socket terisolasi tanpa TLS.
 
 ```bash
-.venv/bin/python manage.py run_notifications --once
-# Pekerja berkelanjutan, termasuk pengingat permohonan lama:
-.venv/bin/python manage.py run_notifications --reminders
+python manage.py migrate --noinput
+python manage.py collectstatic --noinput
+python manage.py check --deploy
+gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 60
 ```
 
-Default `NOTIFICATION_MODE=simulation`: antrean ditandai **simulated**, `sent_at` tetap kosong, dan tidak ada koneksi pengiriman. Pekerja juga mencatat kegagalan, percobaan (maksimal 5), waktu retry, message ID, dan waktu terkirim. Retry eksponensial menghormati waktu tunggu Telegram; kegagalan tidak membatalkan transaksi permohonan. Pengingat dibuat paling banyak sekali sehari per penerima/permohonan setelah `STALE_DAYS` (default 7). Pusat notifikasi pengelola menampilkan metadata teknis tanpa isi kasus.
+Layani `staticfiles/` melalui reverse proxy. Gambar bukti **tidak disimpan di direktori media publik**: disimpan sebagai binary privat di database dan hanya diberikan melalui endpoint dengan login, pemeriksaan cakupan, audit akses, serta header no-store/nosniff. Logo dashboard adalah informasi publik dan dilayani terpisah. Backup database kini juga mencakup bukti gambar.
 
-Pengiriman nyata harus disengaja:
+Hanya set `DJANGO_TRUST_PROXY_HTTPS=true` jika reverse proxy tepercaya menimpa header klien dan Gunicorn tidak dapat diakses langsung publik. `DJANGO_CSRF_TRUSTED_ORIGINS` dapat berisi origin HTTPS resmi. Aktifkan backup terenkripsi, retensi institusi, akses database terbatas, pengujian restore dan tata kelola data sebelum produksi. Gunicorn/layanan produksi HTTPS tidak ditujukan untuk dijalankan native di Windows; Windows lokal menggunakan runserver.
 
-- Set `NOTIFICATION_MODE=live`, `NOTIFICATION_CHANNEL=bot` dan token bot. Pemohon/petugas membuka **Pengaturan Notifikasi → Setuju Notifikasi Bot** melalui menu progres/profil. Tanpa persetujuan, pengiriman gagal secara jelas.
-- Kanal `mtproto` menggunakan akun **institusi khusus**, bukan akun pribadi petugas. Sediakan `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, dan `TELEGRAM_SESSION` (StringSession yang sudah diotorisasi melalui prosedur Telegram yang aman di luar aplikasi). Tidak ada sesi/kode OTP/password pada repo. Jalankan `run_institution_linker` dan pekerja. Aplikasi tidak melakukan login interaktif atau membuat sesi otomatis.
-- Pengguna memilih **Setuju & Kaitkan Akun Institusi** di bot, lalu mengirim `/kaitkan KODE` ke akun institusi resmi yang diberikan pengelola. Kode 10 menit/sekali pakai diverifikasi terhadap ID pengirim aktual pada chat pribadi. Pekerja membutuhkan pengaitan terverifikasi, persetujuan aktif, serta dialog yang sudah terhubung; ID dari bot saja tidak cukup untuk mengirim.
-- **Nonaktifkan Notifikasi** mencabut persetujuan dan kode pengaitan belum terpakai. Penugasan admin diperiksa lagi sebelum pengiriman. Notifikasi tidak berisi NIK, nama, isi Skrining, atau catatan sensitif; hanya arahan untuk membuka bot layanan.
-- MTProto memerlukan akses jaringan Telegram yang sesuai (umumnya koneksi TCP ke pusat data Telegram). Allowlist HTTPS Bot API tidak membuktikan konektivitas MTProto. Deployment harus menyediakan jalur yang didukung; tidak ada mekanisme mengakali blokir/pembatasan.
+Bot API membutuhkan HTTPS ke `api.telegram.org`. Dashboard URL resmi opsional di `DASHBOARD_URL`. Kanal MTProto lama tetap opsional dan tidak dibutuhkan untuk notifikasi bot: membutuhkan akun institusi, API ID/hash/sesi melalui environment, persetujuan, kode pengaitan sekali pakai dan verifikasi ID pengirim aktual. `run_institution_linker` tidak login interaktif atau melewati pembatasan Telegram. Koneksi TCP MTProto membutuhkan jalur jaringan yang didukung dan belum dibuktikan oleh tes Bot API. Kredensial tidak boleh dimasukkan ke source, argumen CLI, audit, atau chat.
 
-Database mencatat perubahan bisnis dan antreannya dalam satu transaksi. Worker mengklaim baris dengan row lock PostgreSQL. Lease 5 menit memungkinkan pemulihan proses mati. Pengiriman jaringan bersifat **at least once**: kegagalan setelah Telegram menerima pesan tetapi sebelum commit log dapat menghasilkan pesan umum berulang. Bot menyimpan update ID untuk mencegah transaksi bisnis berulang; respons juga bisa berulang jika proses mati saat membalas. Tidak ada klaim exactly once untuk jaringan eksternal.
-
-## Produksi PostgreSQL
-
-Set environment produksi sebelum migrasi/startup:
-
-- `DJANGO_DEBUG=false`, kunci acak kuat `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS` untuk domain resmi.
-- `DATABASE_URL` PostgreSQL dengan user database khusus. `DB_SSLMODE=verify-full` adalah default; gunakan CA tepercaya (`PGSSLROOTCERT` bila perlu). `disable` hanya digunakan oleh tes PostgreSQL lokal melalui Unix socket, bukan koneksi produksi.
-- `DASHBOARD_URL=https://DOMAIN_RESMI` dan opsional `DJANGO_CSRF_TRUSTED_ORIGINS=https://DOMAIN_RESMI`.
-- Reverse proxy HTTPS yang melayani `staticfiles/`, menonaktifkan log body/URL berkredensial, mengatur batas request, dan mengakses Gunicorn hanya melalui jaringan privat. Hanya jika proxy tepercaya menimpa header dari klien, set `DJANGO_TRUST_PROXY_HTTPS=true` untuk membaca `X-Forwarded-Proto`.
+## Pengujian
 
 ```bash
-.venv/bin/python manage.py migrate --noinput
-.venv/bin/python manage.py collectstatic --noinput
-.venv/bin/python manage.py check --deploy
-.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 60
-# Jalankan run_bot, run_notifications --reminders, dan linker opsional
-# sebagai proses terpisah di process manager dengan environment yang sama.
-```
-
-Session autentikasi Django terpisah dari Telegram, menggunakan CSRF, password validators, cookie secure/HttpOnly di produksi, serta pembatasan percobaan login berdasarkan alamat peer langsung. Jika di belakang proxy, pertimbangkan rate limit tambahan per pengguna di lapisan proxy; jangan mempercayai header forwarded sembarang. Kode aktivasi dibatasi 5 kegagalan/15 menit per akun Telegram. Aktivitas pengelolaan, akses detail, pengiriman, penugasan, dan progres dicatat tanpa menyalin isi sensitif ke audit.
-
-Siapkan backup terenkripsi, pemulihan teruji, kebijakan retensi data, akses database terbatas, dan tata kelola data institusi sebelum memakai data nyata. Aplikasi tidak mengklaim kepatuhan institusi sudah selesai; instalasi HTTPS/DB produksi, kredensial nyata, dan prosedur operator belum diuji dalam lingkungan pengembangan ini.
-
-## Pengujian dan struktur
-
-```bash
-set -a; . ./.env; set +a
-.venv/bin/python manage.py test --verbosity 2
+.venv/bin/python manage.py test
 .venv/bin/python manage.py makemigrations --check --dry-run
-# Opsional: PostgreSQL lokal terisolasi dan browser Chromium (Linux):
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python scripts/test_postgres.py
+.venv/bin/python scripts/test_upgrade.py
 CHROMIUM_PATH=/usr/bin/chromium .venv/bin/python scripts/test_browser.py
 ```
 
-Tes tidak membutuhkan token/sesi nyata dan tidak mengirim pesan Telegram. PostgreSQL sementara serta database browser sintetis dibuat/dihapus terpisah dari database pengembangan. Skrip browser memerlukan Chromium terpasang dan menghasilkan screenshot berdata sintetis di `docs/`. Lihat [laporan pengujian](docs/TEST_REPORT.md).
+SQLite melewati dua tes row-lock khusus PostgreSQL. Semua data tes/screenshot sintetis; koneksi Telegram nyata ditiru. Pengujian browser mencakup pemberitahuan tanpa klik, tiga tabel/search, verifikasi, upload bukti privat, edit data, logo/keterangan, akun baru, dan tampilan ponsel. Lihat [laporan pengujian](docs/TEST_REPORT.md).
 
-| Modul | Tanggung jawab |
-|---|---|
-| `service/models.py`, `migrations/` | Entitas, constraint, migrasi, ketentuan awal |
-| `service/services.py` | Validasi, registrasi, skrining, penugasan, transisi, kode, pengaitan |
-| `service/access.py` | Pemeriksaan pemilik/peran/lokasi bersama |
-| `service/bot.py`, `telegram_api.py` | Percakapan dan transport Telegram terpisah |
-| `service/notifications.py` | Adapter bot/MTProto, antrean, retry, pengingat |
-| `service/views.py`, `forms.py`, `templates/`, `static/` | Dashboard forest/sage/krem/earth tone yang responsif |
-| `service/admin.py` | Pengelolaan konfigurasi; isi kasus melalui dashboard dengan cakupan akses |
-| `service/management/commands/` | Bot, pekerja, linker, bootstrap pengelola |
-| `service/tests/` | Alur, otorisasi, idempotensi, konkurensi PostgreSQL |
+Modul utama: `models.py`/`migrations` untuk data; `services.py` untuk transaksi/alur; `access.py` untuk hak akses; `bot.py` untuk percakapan; `telegram_api.py` untuk transport; `notifications.py` untuk antrean; `uploads.py` untuk gambar; `views.py`/`forms.py`/`templates` untuk dashboard.
 
-Belum diaktifkan: fasilitas/direktori nyata, referensi wilayah resmi, self asesmen klinis, penjemputan, asesmen profesional, RAJAL/RANAP, rujukan terperinci. Integrasi Telegram nyata membutuhkan konfigurasi/kredensial pengelola dan pengujian operasional tersendiri.
+Direktori tujuh kategori tetap tanpa fasilitas rekaan. Referensi wilayah resmi belum tersedia; alamat manual ditandai belum terverifikasi. Ketentuan tetap berversi; persetujuan diperiksa saat pengajuan. Penjemputan, instrumen klinis internal, asesmen profesional, RAJAL/RANAP dan rujukan rinci tidak diaktifkan.

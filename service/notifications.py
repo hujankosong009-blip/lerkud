@@ -7,7 +7,7 @@ from django.utils import timezone
 from .models import Notification, NotificationRecipient, Application, Status, CLOSED
 from .services import queue_event
 from .access import cases_for
-from .telegram_api import bot_call, DeliveryError
+from .telegram_api import bot_call, DeliveryError, keyboard
 
 SAFE_MESSAGE = 'Ada pembaruan permohonan SALAM MANIS. Buka bot layanan dan pilih Progres Permohonan Saya atau Menu Admin sesuai akses Anda.'
 
@@ -39,12 +39,20 @@ def deliver(notification):
     # Authorization is rechecked at delivery, including revocations and reassignment.
     if notification.application_id:
         app=notification.application
+        if app.deleted_at:
+            raise DeliveryError('application_archived')
         if app.applicant.user_id!=notification.recipient_id:
             officer=getattr(notification.recipient,'officer',None)
             if not officer or not cases_for(officer).filter(pk=app.pk).exists(): raise DeliveryError('recipient_access_revoked')
     if notification.channel=='bot':
         if not notification.recipient.bot_notifications: raise DeliveryError('recipient_not_consented')
-        result=bot_call('sendMessage',{'chat_id':notification.recipient.telegram_id,'text':SAFE_MESSAGE})
+        labels = {'dossier_ready':'📬 Berkas lengkap baru siap diverifikasi.','progress':'🔔 Progres permohonan diperbarui.','closed':'📁 Permohonan telah ditutup.','registration':'✅ Data diri telah diterima.','screening':'💬 Kendala Anda tersimpan.','assignment':'📍 Penugasan permohonan berubah.','reminder':'⏰ Ada permohonan yang membutuhkan perhatian.'}
+        text = labels.get(notification.event, '🔔 Ada pembaruan layanan SALAM MANIS.')
+        buttons = []
+        if notification.application_id:
+            own = notification.application.applicant.user_id == notification.recipient_id
+            buttons = [('Lihat progres saya' if own else 'Buka berkas permohonan', ('my:' if own else 'admin_case:')+str(notification.application_id))]
+        result=bot_call('sendMessage',{'chat_id':notification.recipient.telegram_id,'text':text+'\n\nBuka rincian melalui tombol berikut. Pesan ini tidak memuat data pribadi.', 'reply_markup':keyboard(buttons)})
         return 'sent',str(result['message_id'])
     if notification.channel=='mtproto':
         recipient=NotificationRecipient.objects.filter(user=notification.recipient,active=True).first()
@@ -75,5 +83,5 @@ def process_one():
 
 def enqueue_reminders():
     date=timezone.localdate().isoformat()
-    stale=Application.objects.exclude(status__in=CLOSED).filter(updated_at__lt=timezone.now()-timedelta(days=settings.STALE_DAYS))
+    stale=Application.objects.filter(deleted_at__isnull=True).exclude(status__in=CLOSED).filter(updated_at__lt=timezone.now()-timedelta(days=settings.STALE_DAYS))
     for app in stale.iterator(): queue_event(app,'reminder',f'reminder:{date}:{app.pk}')

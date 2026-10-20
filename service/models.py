@@ -6,6 +6,8 @@ from django.utils import timezone
 
 class Status(models.TextChoices):
     WAIT_SCREEN = 'MENUNGGU_SKRINING', 'Menunggu Skrining'
+    WAIT_ASSESS = 'MENUNGGU_SELF_ASESMEN', 'Menunggu Self Asesmen'
+    WAIT_PROOF = 'MENUNGGU_BUKTI', 'Menunggu Bukti Self Asesmen'
     WAIT_VERIFY = 'MENUNGGU_VERIFIKASI', 'Menunggu Verifikasi'
     REVIEW = 'SEDANG_DITINJAU', 'Sedang Ditinjau Petugas'
     NEED_INFO = 'PERLU_KELENGKAPAN', 'Perlu Kelengkapan'
@@ -19,6 +21,8 @@ class TelegramUser(models.Model):
     state = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     bot_notifications = models.BooleanField(default=False)
+    notification_decided = models.BooleanField(default=False)
+    notification_consent_at = models.DateTimeField(null=True, blank=True)
     def __str__(self): return f'Pengguna #{self.pk}'
 
 class Terms(models.Model):
@@ -75,26 +79,28 @@ class Location(models.Model):
     ibm_ap = models.TextField(blank=True)
     def __str__(self): return self.name
 
+class Role(models.TextChoices):
+    SUPERADMIN='SUPERADMIN','Superadmin'
+    PELAKSANA='PELAKSANA','Pelaksana'
+
 class Officer(models.Model):
     web_user = models.OneToOneField(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     telegram = models.OneToOneField(TelegramUser, null=True, blank=True, on_delete=models.PROTECT)
+    role = models.CharField(max_length=10, choices=Role.choices, default=Role.PELAKSANA)
+    all_locations = models.BooleanField(default=False, verbose_name='Cakupan semua lokasi')
     verified = models.BooleanField(default=False)
-    def __str__(self): return f'Petugas #{self.pk}'
-
-class Role(models.TextChoices):
-    LOCAL='LOCAL','Admin titik akses'
-    COORD='COORD','Koordinator BNN'
-    SYSTEM='SYSTEM','Pengelola sistem'
+    def __str__(self):
+        return f'{self.web_user.get_username() if self.web_user else "Petugas #"+str(self.pk)} · {self.get_role_display()}'
 
 class OfficerAssignment(models.Model):
     officer = models.ForeignKey(Officer, related_name='assignments', on_delete=models.CASCADE)
     location = models.ForeignKey(Location, on_delete=models.PROTECT)
-    role = models.CharField(max_length=10, choices=Role.choices)
     active = models.BooleanField(default=True)
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['officer','location','role'], name='unique_officer_assignment')]
+        constraints = [models.UniqueConstraint(fields=['officer','location'], name='unique_officer_location')]
 
 class ActivationCode(models.Model):
+    officer = models.ForeignKey(Officer, null=True, blank=True, on_delete=models.PROTECT)
     digest = models.CharField(max_length=128, unique=True)
     location = models.ForeignKey(Location, on_delete=models.PROTECT)
     role = models.CharField(max_length=10, choices=Role.choices)
@@ -112,16 +118,21 @@ class Application(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     number = models.CharField(max_length=40, unique=True)
     applicant = models.ForeignKey(Profile, on_delete=models.PROTECT)
-    identity = models.JSONField()  # Immutable submission snapshot, separate from profile.
+    identity = models.JSONField()  # Submission identity, separate from profile; authorized edits are audited.
     consent = models.ForeignKey(Consent, on_delete=models.PROTECT)
     status = models.CharField(max_length=30, choices=Status.choices, default=Status.WAIT_SCREEN)
     location = models.ForeignKey(Location, null=True, blank=True, on_delete=models.PROTECT)
     responsible = models.ForeignKey(Officer, null=True, blank=True, on_delete=models.PROTECT)
     duplicate_review = models.BooleanField(default=False)
+    legacy_submission = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(Officer, related_name='+', null=True, blank=True, on_delete=models.PROTECT)
+    delete_reason = models.TextField(blank=True)
+    assessment_url = models.URLField(blank=True)
     submitted_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['applicant'], condition=~Q(status__in=['SELESAI','DIBATALKAN']), name='one_active_application')]
+        constraints = [models.UniqueConstraint(fields=['applicant'], condition=Q(deleted_at__isnull=True) & ~Q(status__in=['SELESAI','DIBATALKAN']), name='one_active_application')]
         indexes = [models.Index(fields=['status','updated_at']), models.Index(fields=['location','submitted_at'])]
     def __str__(self): return self.number
 
@@ -239,3 +250,31 @@ class ScreeningDraft(models.Model):
     application = models.OneToOneField(Application, on_delete=models.CASCADE)
     text = models.TextField()
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class SiteConfiguration(models.Model):
+    title = models.CharField(max_length=80, default='SALAM MANIS')
+    subtitle = models.CharField(max_length=160, default='Mendekatkan Akses, Menghubungkan Layanan.')
+    description = models.TextField(default='Sadar Lapor Mandiri – Akses Mudah, Aman, Humanis.')
+    self_assessment_url = models.URLField(blank=True, verbose_name='Tautan resmi BOSS BNN / Self Asesmen')
+    logo = models.BinaryField(null=True, blank=True)
+    logo_mime = models.CharField(max_length=30, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        return super().save(*args, **kwargs)
+
+class AssessmentEvidence(models.Model):
+    application = models.ForeignKey(Application, related_name='evidence', on_delete=models.PROTECT)
+    image = models.BinaryField()
+    mime = models.CharField(max_length=30)
+    checksum = models.CharField(max_length=64)
+    source_url = models.URLField()
+    submitted_at = models.DateTimeField(default=timezone.now)
+    consent_at = models.DateTimeField(default=timezone.now)
+    submitted_by = models.ForeignKey(Officer, null=True, blank=True, on_delete=models.PROTECT)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey(Officer, related_name='+', null=True, blank=True, on_delete=models.PROTECT)
+    verification_note = models.TextField(blank=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['application','checksum'], name='unique_evidence_image')]

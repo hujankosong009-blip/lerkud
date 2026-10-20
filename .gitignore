@@ -6,3 +6,5 @@ __pycache__/
 staticfiles/
 .coverage
 *.session*
+backups/
+*.sqlite3.bak*

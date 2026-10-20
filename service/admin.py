@@ -12,7 +12,7 @@ admin.site.index_title = 'Konfigurasi dan akses'
 class SystemAdmin(admin.ModelAdmin):
     def allowed(self,request):
         officer=Officer.objects.filter(web_user=request.user,verified=True).first()
-        return request.user.is_staff and has_role(officer,Role.SYSTEM)
+        return request.user.is_staff and has_role(officer,Role.SUPERADMIN)
     def has_module_permission(self,request): return self.allowed(request)
     def has_view_permission(self,request,obj=None): return self.allowed(request)
     def has_add_permission(self,request): return self.allowed(request)
@@ -47,12 +47,13 @@ class LocationAdmin(SystemAdmin):
 
 @admin.register(OfficerAssignment)
 class AssignmentAdmin(SystemAdmin):
-    list_display=['officer','location','role','active']
-    list_filter=['role','active','location']
+    list_display=['officer','location','active']
+    list_filter=['active','location']
 
 @admin.register(Officer)
 class OfficerAdmin(SystemAdmin):
-    list_display=['id','web_user','telegram','verified']
+    readonly_fields=['role','all_locations','verified']
+    list_display=['id','web_user','telegram','role','all_locations','verified']
 
 @admin.register(ActivationCode)
 class CodeAdmin(SystemAdmin):
