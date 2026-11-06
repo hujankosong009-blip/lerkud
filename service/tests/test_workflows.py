@@ -24,6 +24,13 @@ def picture(color='green'):
     Image.new('RGB',(64,48),color).save(output,'PNG')
     return output.getvalue()
 
+def transparent_logo():
+    output=BytesIO()
+    image=Image.new('RGBA',(64,48),(0,0,0,0))
+    image.paste((39,161,154,255),(12,10,52,38))
+    image.save(output,'PNG')
+    return output.getvalue()
+
 class WorkflowTests(TestCase):
     def setUp(self):
         self.user=TelegramUser.objects.create(telegram_id=100001,notification_decided=True,bot_notifications=True)
@@ -336,12 +343,38 @@ class WorkflowTests(TestCase):
         self.assertEqual(Application.objects.filter(applicant__user=self.other).count(),1)
     def test_branding_logo_and_https_link(self):
         self.client.force_login(self.manager.web_user)
-        response=self.client.post('/tampilan/',{'title':'LAYANAN UJI','subtitle':'Judul uji','description':'Deskripsi uji','self_assessment_url':'https://example.org/assessment','logo_upload':SimpleUploadedFile('logo.png',picture(),'image/png')})
+        response=self.client.post('/tampilan/',{'title':'LAYANAN UJI','subtitle':'Judul uji','description':'Deskripsi uji','self_assessment_url':'https://example.org/assessment','logo_upload':SimpleUploadedFile('logo.png',transparent_logo(),'image/png')})
         self.assertEqual(response.status_code,302); self.assertEqual(site_config().title,'LAYANAN UJI')
         self.assertEqual(self.client.get('/logo/').status_code,200)
+        logo_response=self.client.get('/logo/')
+        self.assertEqual(logo_response['Content-Type'],'image/png')
+        with Image.open(BytesIO(logo_response.content)) as stored:
+            self.assertEqual(stored.mode,'RGBA')
+            self.assertEqual(stored.getpixel((0,0))[3],0)
+            self.assertEqual(stored.getpixel((30,20))[3],255)
         self.assertContains(self.client.get('/permohonan/'),'LAYANAN UJI')
         response=self.client.post('/tampilan/',{'title':'Test','subtitle':'Test','description':'Test','self_assessment_url':'http://example.org'})
         self.assertEqual(response.status_code,200); self.assertContains(response,'HTTPS')
+    def test_opaque_logo_rejected_without_replacing_existing_brand(self):
+        config=site_config(); config.logo,config.logo_mime,_=clean_image(transparent_logo(),logo=True); config.save()
+        old_logo=bytes(config.logo)
+        self.client.force_login(self.manager.web_user)
+        response=self.client.post('/tampilan/',{'title':'Nouvelle','subtitle':'Test','description':'Test','self_assessment_url':'https://example.org','logo_upload':SimpleUploadedFile('opaque.png',picture(),'image/png')})
+        self.assertEqual(response.status_code,200)
+        self.assertContains(response,'area transparan')
+        self.assertEqual(bytes(site_config().logo),old_logo)
+        self.assertNotEqual(site_config().title,'Nouvelle')
+    def test_logo_checks_real_format_and_rejects_empty_alpha(self):
+        jpeg=BytesIO(); Image.new('RGB',(10,10),'white').save(jpeg,'JPEG')
+        blank=BytesIO(); Image.new('RGBA',(10,10),(0,0,0,0)).save(blank,'PNG')
+        for invalid in [jpeg.getvalue(),blank.getvalue(),b'fake png']:
+            with self.subTest(data=invalid[:8]), self.assertRaises(ValidationError):
+                clean_image(invalid,logo=True)
+        # Evidence uses its independent JPEG pipeline; logo transparency cannot alter it.
+        evidence,mime,_=clean_image(transparent_logo())
+        self.assertEqual(mime,'image/jpeg')
+        with Image.open(BytesIO(evidence)) as stored:
+            self.assertEqual(stored.mode,'RGB')
     def test_accounts_create_edit_disable_and_role_choices(self):
         self.client.force_login(self.manager.web_user)
         response=self.client.post('/akun/',{'username':'baru','password1':'Strong-example-password-7823','password2':'Strong-example-password-7823','role':Role.PELAKSANA,'location':self.a.pk})

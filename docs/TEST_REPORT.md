@@ -1,5 +1,21 @@
 # Laporan pengujian SALAM MANIS — pilihan titik akses
 
+## Pembaruan desain dan logo — 6 November 2026
+
+Desain dashboard dan login diperbarui dengan sidebar biru tua, aksen toska/ungu, ikon SVG konsisten, serta font Plus Jakarta Sans dan Manrope lokal. Logo baru wajib PNG transparan dan disimpan sebagai RGBA; bukti asesmen tetap memakai pemrosesan privat yang terpisah. Logo JPEG lama dipertahankan dan perlu diunggah ulang dari PNG asli untuk mengembalikan transparansi.
+
+| Pemeriksaan terbaru | Hasil |
+|---|---|
+| PostgreSQL | **75/75 lulus**, tanpa skip; exit 0 |
+| SQLite | **71 lulus, 4 dilewati** (konkurensi PostgreSQL), 75 ditemukan |
+| Browser | Lulus: alur utama, font lokal, PNG RGBA dengan piksel transparan, penolakan logo berlatar penuh, akun, formulir dan logout |
+| Responsif | Lebar 360, 390, 768, 1280 dan 1440 pixel tanpa overflow horizontal halaman |
+| Pemeriksaan Django / migrasi | Tidak ada masalah dan tidak memerlukan migrasi baru |
+
+Screenshot pada dokumen ini telah diperbarui dari database pengujian sementara. Seluruh data tetap sintetis; tidak ada pesan Telegram nyata dikirim. Lihat [panduan dan pratinjau desain](DASHBOARD_UPDATE.md). Pengujian 20 Oktober di bawah merupakan catatan validasi versi alur titik akses sebelumnya.
+
+## Validasi alur — 20 Oktober 2026
+
 Dijalankan 20 Oktober 2026 (Asia/Jakarta), Python 3.12.14, Django 5.2.18, PostgreSQL sementara 16.2 dan Chromium. Seluruh pemohon, lokasi, kendala, gambar dan akun tes adalah sintetis. Transport Telegram ditiru; tidak ada pesan nyata dikirim dari lingkungan pengujian.
 
 ## Hasil

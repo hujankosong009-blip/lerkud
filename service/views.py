@@ -267,7 +267,7 @@ def branding(request):
     if request.method=='POST' and form.is_valid():
         try:
             if form.cleaned_data['logo_upload']:
-                data,mime,_=clean_image(read_upload(form.cleaned_data['logo_upload']))
+                data,mime,_=clean_image(read_upload(form.cleaned_data['logo_upload']),logo=True)
                 config.logo=data; config.logo_mime=mime
             elif form.cleaned_data['remove_logo']:
                 config.logo=None; config.logo_mime=''
@@ -276,8 +276,8 @@ def branding(request):
             messages.success(request,'Tampilan dashboard dan tautan Self Asesmen diperbarui.')
             return redirect('branding')
         except ValidationError as exc:
-            form.add_error(None,exc)
-    return render(request,'service/form.html',context(request,form=form,title='Tampilan dashboard & Self Asesmen',back_url='management',multipart=True))
+            form.add_error('logo_upload',exc)
+    return render(request,'service/branding.html',context(request,form=form))
 
 
 @never_cache

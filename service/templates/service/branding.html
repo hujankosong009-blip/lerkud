@@ -1,0 +1,10 @@
+{% extends 'service/base.html' %}
+{% block title %}Tampilan dashboard{% endblock %}
+{% block breadcrumb %}Identitas layanan{% endblock %}
+{% block content %}
+<div class="page-heading"><div><span class="eyebrow">IDENTITAS VISUAL</span><h1>Tampilan dashboard</h1><p class="muted">Identitas yang konsisten di setiap langkah layanan.</p></div><span class="page-icon">{% include 'service/icon.html' with name='palette' %}</span></div>
+<div class="branding-grid">
+<section class="panel form-panel"><div class="section-heading"><div><h2>Identitas & pengaturan</h2><p class="muted small">Perubahan tampil pada dashboard dan halaman masuk.</p></div></div><form method="post" enctype="multipart/form-data">{% csrf_token %}{{ form.as_p }}<button class="primary">{% include 'service/icon.html' with name='check' %} Simpan</button></form></section>
+<aside class="branding-preview"><section class="panel"><span class="eyebrow">LOGO LAYANAN</span><h2>Biarkan identitas Anda bersinar.</h2><p class="muted small">Logo ditampilkan utuh, tanpa kotak latar, bingkai, atau pemotongan.</p><div class="logo-preview">{% if branding.logo %}<img src="{% url 'logo_image' %}" alt="Logo {{ branding.title }}">{% else %}{% include 'service/icon.html' with name='photo' %}<span>Unggah logo PNG transparan</span>{% endif %}</div>{% if branding.logo and branding.logo_mime != 'image/png' %}<div class="notice">Logo versi lama tersimpan sebagai JPEG. Unggah kembali PNG asli yang transparan untuk mengembalikan latar transparannya.</div>{% endif %}<div class="logo-guidance">{% include 'service/icon.html' with name='check' %}<p>Format PNG dengan area transparan. Maksimal 5 MB. Transparansi tetap dipertahankan saat disimpan.</p></div><p class="small muted">Mengubah ekstensi JPG menjadi PNG tidak menghapus latar yang sudah menyatu dengan gambar.</p></section><div class="branding-tip">{% include 'service/icon.html' with name='spark' %}<p>Satu logo yang sama digunakan pada sidebar, beranda, dan halaman masuk.</p></div></aside>
+</div>
+{% endblock %}

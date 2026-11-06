@@ -69,7 +69,11 @@ class EvidenceUploadForm(forms.Form):
     confirm = forms.BooleanField(label='Saya berwenang mencatat bukti ini; bukti tetap membutuhkan verifikasi.')
 
 class BrandingForm(forms.ModelForm):
-    logo_upload = forms.FileField(label='Logo baru (JPEG/PNG/WebP)',required=False)
+    logo_upload = forms.FileField(
+        label='Logo baru · PNG transparan', required=False,
+        help_text='Maksimal 5 MB. Gunakan PNG dengan latar transparan agar logo menyatu dengan halaman.',
+        widget=forms.ClearableFileInput(attrs={'accept':'image/png'}),
+    )
     remove_logo = forms.BooleanField(label='Hapus logo saat ini',required=False)
     class Meta:
         model = SiteConfiguration

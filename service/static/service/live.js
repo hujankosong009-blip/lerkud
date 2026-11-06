@@ -14,7 +14,7 @@
       return;
     }
     const permission = await Notification.requestPermission();
-    enable.textContent = permission === 'granted' ? '🔔 Notifikasi browser aktif' : 'Izin browser belum diberikan';
+    enable.querySelector('span').textContent = permission === 'granted' ? 'Notifikasi browser aktif' : 'Izin browser belum diberikan';
   });
   async function poll() {
     try {
@@ -23,10 +23,10 @@
       const data = await response.json();
       badge.textContent = data.waiting;
       document.title = (data.waiting ? `(${data.waiting}) ` : '') + originalTitle;
-      status.textContent = `● Pembaruan otomatis · ${data.notification_mode === 'live' ? 'Telegram live' : 'Telegram simulasi'}`;
+      status.textContent = `Pembaruan otomatis · ${data.notification_mode === 'live' ? 'Telegram live' : 'Telegram simulasi'}`;
       if (previous && (previous.revision !== data.revision || previous.total !== data.total)) {
         notice.hidden = false;
-        notice.textContent = `🔔 Ada pembaruan permohonan. ${data.waiting} berkas menunggu verifikasi.`;
+        notice.textContent = `Ada pembaruan permohonan. ${data.waiting} berkas menunggu verifikasi.`;
         if ('Notification' in window && Notification.permission === 'granted') {
           try { new Notification('SALAM MANIS · Pembaruan layanan', {body:'Ada pembaruan permohonan. Buka dashboard untuk rincian.',tag:'salam-manis-update'}); } catch (_) { /* Some mobile browsers require a service worker; the page badge remains active. */ }
         }

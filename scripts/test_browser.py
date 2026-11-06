@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from urllib.request import urlopen
 from playwright.sync_api import sync_playwright
-from PIL import Image
+from PIL import Image, ImageDraw
 ROOT=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='salam-browser-') as temp:
     env=os.environ.copy(); env.pop('DATABASE_URL',None)
@@ -46,6 +46,10 @@ for i in range(4):
     django('shell','-c',setup,stdout=subprocess.DEVNULL)
     env.pop('BROWSER_TEST_PASSWORD')
     image=Path(temp)/'proof.png'; Image.new('RGB',(120,80),'#668a71').save(image)
+    logo=Path(temp)/'transparent-logo.png'
+    logo_image=Image.new('RGBA',(180,140),(0,0,0,0))
+    ImageDraw.Draw(logo_image).ellipse((35,15,145,125),fill='#26a69aff')
+    logo_image.save(logo)
     server=subprocess.Popen([str(ROOT/'.venv/bin/python'),'manage.py','runserver','127.0.0.1:8765','--noreload'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     try:
         for _ in range(100):
@@ -59,16 +63,26 @@ for i in range(4):
             page=browser.new_page(viewport={'width':1440,'height':1100},device_scale_factor=1)
             errors=[]; page.on('pageerror',lambda e:errors.append(str(e)))
             page.goto('http://127.0.0.1:8765/login/')
+            page.evaluate('document.fonts.ready')
+            page.screenshot(path=str(ROOT/'docs/dashboard-login.png'),full_page=True,animations="disabled")
             page.locator('[name=username]').fill('superadmin-uji'); page.locator('[name=password]').fill(password)
             page.get_by_role('button',name='Masuk ke dashboard').click()
             page.wait_for_url('**/permohonan/')
             assert page.get_by_role('heading',name='Data Pemohon').is_visible()
             page.get_by_text('Telegram simulasi',exact=False).wait_for()
+            page.evaluate('document.fonts.ready')
+            assert page.evaluate('document.fonts.check(\'700 20px "Plus Jakarta Sans"\')')
+            assert page.evaluate('document.fonts.check(\'400 14px "Manrope"\')')
             assert page.locator('#data-table tbody tr').count()==4
-            page.screenshot(path=str(ROOT/'docs/dashboard-desktop.png'),full_page=True)
+            assert page.locator('#data-search').evaluate('(el)=>parseFloat(getComputedStyle(el).paddingLeft) >= 38')
+            page.screenshot(path=str(ROOT/'docs/dashboard-desktop.png'),full_page=True,animations="disabled")
             page.set_viewport_size({'width':390,'height':844})
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-            page.screenshot(path=str(ROOT/'docs/dashboard-mobile.png'),full_page=True)
+            page.screenshot(path=str(ROOT/'docs/dashboard-mobile.png'),full_page=True,animations="disabled")
+            page.set_viewport_size({'width':1440,'height':1100})
+            for width in [360,768,1280]:
+                page.set_viewport_size({'width':width,'height':900})
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),width
             page.set_viewport_size({'width':1440,'height':1100})
             # The page notices an external database update without any user click.
             django('shell','-c',"from service.models import Application; from django.utils import timezone; a=Application.objects.first(); a.updated_at=timezone.now(); a.save(update_fields=['updated_at'])",stdout=subprocess.DEVNULL)
@@ -93,11 +107,33 @@ for i in range(4):
             page.locator('[name=reason]').fill('Koreksi sintetis')
             page.get_by_role('button',name='Simpan',exact=True).click()
             assert page.get_by_role('heading',name='Pemohon Sintetis Koreksi',exact=True).is_visible()
+            page.screenshot(path=str(ROOT/'docs/dashboard-detail.png'),full_page=True,animations="disabled")
             page.goto('http://127.0.0.1:8765/tampilan/')
+            page.screenshot(path=str(ROOT/'docs/dashboard-branding.png'),full_page=True,animations="disabled")
             page.locator('[name=subtitle]').fill('Mudah diakses, cepat ditindaklanjuti.')
+            # Opaque PNGs must not silently replace a transparent logo.
             page.locator('[name=logo_upload]').set_input_files(str(image))
             page.get_by_role('button',name='Simpan',exact=True).click()
+            assert page.get_by_text('Logo masih memiliki latar penuh.',exact=False).is_visible()
+            page.locator('[name=logo_upload]').set_input_files(str(logo))
+            page.get_by_role('button',name='Simpan',exact=True).click()
             assert page.locator('img.brand-logo').count()==1
+            assert page.locator('img.brand-logo').evaluate('(el)=>getComputedStyle(el).backgroundColor')=='rgba(0, 0, 0, 0)'
+            with urlopen('http://127.0.0.1:8765/logo/') as response:
+                from io import BytesIO
+                assert response.headers['Content-Type']=='image/png'
+                stored_logo=Image.open(BytesIO(response.read()))
+                assert stored_logo.mode=='RGBA' and stored_logo.getpixel((0,0))[3]==0
+            for route in ['akun/','notifikasi/','pengelolaan/','tampilan/']:
+                # Resolve the real management URL through the navigation.
+                if route=='pengelolaan/':
+                    page.get_by_role('link',name='Pengelolaan',exact=True).click()
+                else:
+                    page.goto('http://127.0.0.1:8765/'+route)
+                assert page.locator('main h1').count()>0
+                page.set_viewport_size({'width':390,'height':844})
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),route
+                page.set_viewport_size({'width':1440,'height':1100})
             page.goto('http://127.0.0.1:8765/akun/')
             page.locator('[name=username]').fill('pelaksana-browser')
             page.locator('[name=password1]').fill('Synthetic-browser-password-8972')
@@ -113,6 +149,6 @@ for i in range(4):
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             assert not errors,errors
             browser.close()
-        print('Browser passed: login, unified table/search, live notice, verification, image upload, edit, branding/logo, account creation, mobile layout/logout. Synthetic DB removed.')
+        print('Browser passed: self-hosted fonts, login, unified table/search, live notice, verification, evidence upload, edit, transparent PNG and opaque rejection, account creation, secondary screens, 360/390/768/1280/1440px layouts, logout. Synthetic DB removed.')
     finally:
         server.terminate(); server.wait(timeout=10)
